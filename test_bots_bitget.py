@@ -7,6 +7,7 @@ from order_models import DCAOrderModel
 from signal_generators import SimpleMMSignalGenerator
 from botlib import MarketMakerBot
 
+# load environment variables
 load_dotenv()
 BITGET_API_KEY=os.getenv('BITGET_API_KEY')
 BITGET_API_SECRET=os.getenv('BITGET_API_SECRET')
