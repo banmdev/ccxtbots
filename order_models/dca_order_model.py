@@ -185,7 +185,7 @@ class DCAOrderModel(OrderModel):
             raise TypeError(f"({self.class_name()}._dca_base_size) Argument risk_per_trade must be of type float, not {type(risk_per_trade)}")
 
         if not isinstance(asset_price, float) and not isinstance(asset_price, int):
-            raise TypeError(f"({self.class_name()}._dca_model_coefficients) Argument asset_price must be of type int or float, not {type(asset_price)}")
+            raise TypeError(f"({self.class_name()}._dca_base_size) Argument asset_price must be of type int or float, not {type(asset_price)}")
 
         periods = self.num_trades - 1
         sl_price = self._dca_price_after_periods(period=periods, asset_price=asset_price)

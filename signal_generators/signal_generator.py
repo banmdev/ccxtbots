@@ -8,11 +8,11 @@ class SignalGenerator(BaseClass):
 
 class BuySignalGenerator(BaseClass):
     # returns buy only
-    def signal(self, price, df):
+    def signal(self):
         return 'buy'
 
 class SellSignalGenerator(BaseClass):
     # returns sell only
-    def signal(self, price, df):
+    def signal(self):
         return 'sell'
         

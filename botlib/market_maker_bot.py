@@ -6,6 +6,10 @@ from order_models import DCAOrderModel
 from exchange_adapters import ExchangeAdapter
 from signal_generators import SimpleMMSignalGenerator
 
+
+# import pprint
+# pp = pprint.PrettyPrinter(indent=4)
+
 class MarketMakerBot(BaseBot):
 
     def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, signal_generator: SimpleMMSignalGenerator, 
@@ -75,23 +79,21 @@ class MarketMakerBot(BaseBot):
     def crv(self, value):
         self._crv = value
 
-    def shutdown_handler(self):
-
-        log_prefix = f"({self.class_name()}.shutdown_handler) symbol {self.symbol}:"
-  
-        logging.info(f'{log_prefix} Shuttig down the bot ...')
-        
-        # only cancel orders and delete files when not on a position
-        if self._open_position_bool == False:
-            self.housekeeping_handler()
-
     def housekeeping_handler(self):
 
+        # the parent class takes care for the Stop loss and Take profit orders
         super().housekeeping_handler()
 
         log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
 
         try:
+            
+            # print(f'open_stop_orders_by_id = ')
+            # pp.pprint(self._open_stop_orders_by_id)
+            
+            # print(f'open_limit_orders_by_id = ')
+            # pp.pprint(self._open_limit_orders_by_id)
+            
             # cancel all orders first - only existing from the bot ...
             if self._dca_model_long.model_df is not None:
                 self.cancel_orders_based_on_model(self._dca_model_long.model_df)
@@ -122,17 +124,6 @@ class MarketMakerBot(BaseBot):
             # do we have a matching open order?
             if self.matching_order_by_id(o['order_id'], o['type'], o['direction']):
                 self._ea.cancel_order_based_on_model(o)
-
-            # also check if an open tp_order needs to be canceled
-            if 'tp_order_id' in o:
-                tp_dir = 'sell' if o['direction'] == 'buy' else 'buy'
-                if self.matching_order_by_id(o['tp_order_id'], 'limit', tp_dir):
-                    tp_order = { 'symbol': o['symbol'], 
-                                 'id': o['tp_order_id'], 
-                                 'type': 'limit', 
-                                 'direction': tp_dir, 
-                                 'exchange_id': self._ea.id}
-                    self._ea.cancel_order_based_on_model(tp_order)
 
     def preparation_handler(self):
         log_prefix=f"({self.class_name()}.preparation_handler) symbol {self.symbol}:"
@@ -210,6 +201,7 @@ class MarketMakerBot(BaseBot):
             logging.warning(f'{log_prefix} I am NOT in a position anymore ... do nothing with orders and exit this function')
             return
 
+        # ONLY OVERRIDE IF THE MODEL WAS RESTORED FROM FILE
         if was_restored:
             self.last_sl_order_id = model.get_identifier()
             self.last_tp_order_id = model.get_latest_tp_order_id_by_size(self._current_size)      

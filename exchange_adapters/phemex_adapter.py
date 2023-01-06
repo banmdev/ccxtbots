@@ -51,10 +51,10 @@ class PhemexAdapter(ExchangeAdapter):
         
         symbol_id = self._markets[symbol]['id']
 
-        trigger_price_phe = price * 10000
+        trigger_price_phe = int(round(price * 10000)) # hope this works with int ...
         sl_params = {
             'symbol': symbol_id, # resolved symbol_id 
-            'ordType': 'Stop', # phemex
+            'ordType': 'Stop',   # phemex
             'triggerType': 'ByLastPrice', # phemex
             'stopPxEp': trigger_price_phe,  
         } 
@@ -65,7 +65,7 @@ class PhemexAdapter(ExchangeAdapter):
 
             if (price < ask):
                 order = self._exchange.create_order(symbol, 'market', 'sell', size, price, sl_params) 
-                logging.info(f'{log_prefix} Just made a SELL STOP LOSS order of {size} {symbol} at trigger price {price:.2f}: ')
+                logging.info(f'{log_prefix} Just made a SELL STOP LOSS order of {size} {symbol} at trigger price {price:.4f} phemex={trigger_price_phe}')
                 return order
             else:
                 logging.exception(f'{log_prefix} Trigger price {price} above {ask} - no order placed - would trigger immediately')
@@ -75,7 +75,7 @@ class PhemexAdapter(ExchangeAdapter):
 
             if (price > bid):
                 order = self._exchange.create_order(symbol, 'market', 'buy', size, price, sl_params)   
-                logging.info(f'{log_prefix} Just made a BUY STOP LOSS order of {size} {symbol} at trigger price {price:.2f}: ')
+                logging.info(f'{log_prefix} Just made a BUY STOP LOSS order of {size} {symbol} at trigger price {price:.4f} phemex={trigger_price_phe}')
                 return order
             else:
                 logging.exception(f'{log_prefix} Trigger price {price} below {bid} - no order placed - would trigger immediately')

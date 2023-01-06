@@ -89,8 +89,34 @@ class BaseBot(BaseClass):
         logging.debug(f'({self.class_name()}.preparation_handler) symbol {self.symbol}: Prepare to run the main loop')
 
     def housekeeping_handler(self):
+        log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
+        
+        logging.info(f'{log_prefix} I am not in a position anymore - cleaning up previous orders, files or dataframes')
+        
+        try:
+            
+            if self.last_sl_order_id is not None:
+                self._ea.cancel_order(self.last_sl_order_id, self.symbol)
+                
+                for dir in ['sell', 'buy']:
+                    if self.last_sl_order_id in self._open_stop_orders_by_id[dir]:
+                        del(self._open_stop_orders_by_id[dir][self.last_sl_order_id])
+                    
+                self.last_sl_order_id = None
+        
+            if self.last_tp_order_id is not None:
+                self._ea.cancel_order(self.last_tp_order_id, self.symbol)
+                
+                for dir in ['sell', 'buy']:
+                    if self.last_tp_order_id in self._open_limit_orders_by_id[dir]:
+                        del(self._open_limit_orders_by_id[dir][self.last_tp_order_id])
+                
+                self.last_tp_order_id = None
+                
+        except Exception as e:
+            logging.exception(f'{log_prefix} WARN: Could not cancel existing TP/SL orders', Exception(e))
+            raise
 
-        logging.debug(f'({self.class_name()}.housekeeping_handler) symbol {self.symbol}: I am not in a position - cleaning up previous orders, files and dataframes')
 
     def noposition_handler(self):
 
@@ -117,6 +143,10 @@ class BaseBot(BaseClass):
         log_prefix = f"({self.class_name()}.shutdown_handler) symbol {self.symbol}:"
 
         logging.info(f'{log_prefix} Shutdown the bot')
+        
+        # only cancel orders and delete files when not on a position
+        if self._open_position_bool == False:
+            self.housekeeping_handler()
 
 
     # General functions for order management:
@@ -326,7 +356,7 @@ class BaseBot(BaseClass):
                     else: 
                         logging.debug(f'{log_prefix} Order detected: {o_id} Type: {o_type} Side: {o_side} Amount: {o_amount} at Price {o_price} Filled: {o_filled} Remaining: {o_remaining} Timestamp: {o_timestamp}')
             
-                # was deleted manually by trader
+                # was either executed or deleted manually by trader
                 if last_tp_order_found != True:
                     self.last_tp_order_id = None
 
@@ -382,8 +412,6 @@ class BaseBot(BaseClass):
                             self._last_open_position_bool = False
                             self._last_current_long = None
                             self._last_position_size = None
-                            self.last_sl_order_id = None
-                            self.last_tp_order_id = None
 
                         # call the housekeeping handler
                         self.housekeeping_handler()
