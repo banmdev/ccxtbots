@@ -25,12 +25,12 @@ if __name__ == '__main__':
     }
 
     params = {"type":"swap", "code":PHEMEX_MARGINCOIN}
-    symbol = 'DYDX/USD:USD'
+    symbol = 'SOL/USD:USD'
 
     adapter = PhemexAdapter(connect_params, params)
 
-    dca_model_long  = DCAOrderModel(adapter, symbol=symbol, direction='long',  num_trades=4, price_dev=0.0030, save_scale=2.0)
-    dca_model_short = DCAOrderModel(adapter, symbol=symbol, direction='short', num_trades=4, price_dev=0.0030, save_scale=2.0)
+    dca_model_long  = DCAOrderModel(adapter, symbol=symbol, direction='long',  num_trades=4, price_dev=0.0065, save_scale=2.0)
+    dca_model_short = DCAOrderModel(adapter, symbol=symbol, direction='short', num_trades=4, price_dev=0.0065, save_scale=2.0)
     signal_generator = SimpleMMSignalGenerator()
 
     bot = MarketMakerBot(exchange_adapter=adapter,

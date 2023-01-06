@@ -8,7 +8,7 @@ from base import BaseClass
 
 class ExchangeAdapter(BaseClass):
 
-    def __init__(self, exchange: ccxt.Exchange, exchange_params: dict):
+    def __init__(self, exchange, exchange_params):
         self._exchange = exchange
         self._exchange_params = exchange_params
 
@@ -149,7 +149,7 @@ class ExchangeAdapter(BaseClass):
         log_prefix = f"({self.class_name()}.fetch_open_orders) symbol {symbol}:"
 
         try:
-            open_orders = self._exchange.fetch_open_orders(symbol)  #, params={'stop': True}
+            open_orders = self._exchange.fetch_open_orders(symbol) 
 
         except Exception as err:
             logging.exception(f"{log_prefix} Unexpected {err=}, {type(err)=}")

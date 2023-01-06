@@ -205,6 +205,7 @@ class MarketMakerBot(BaseBot):
         # REFRESH OPEN POSITIONS
         # query open positions again, things may have changed, e.g. take profit executed
         self.refresh_open_position()
+        
         if self._open_position_bool == False:
             logging.warning(f'{log_prefix} I am NOT in a position anymore ... do nothing with orders and exit this function')
             return

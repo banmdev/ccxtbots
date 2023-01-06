@@ -275,7 +275,7 @@ class BaseBot(BaseClass):
         last_sl_order_found = False
         
         try:
-            open_orders = self._ea.fetch_open_orders(self.symbol) #, params={'stop': True}
+            open_orders = self._ea.fetch_open_orders(self.symbol) 
 
             if len(open_orders) > 0:
                 ## pp.pprint (open_orders)
