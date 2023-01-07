@@ -20,6 +20,7 @@ class BitgetAdapter(ExchangeAdapter):
         self._taker_fees = 0.00051
         self._openpos_size_field = 'contractSize'
         self._trade_params = { 'timeInForce': 'post_only', 'post_only': True }
+        # self._trade_params_kill = self._trade_params
         self._trade_params_kill = { 'timeInForce': 'post_only', 'post_only': True, 'reduceOnly': True }
 
         # for low level api access 
@@ -115,6 +116,12 @@ class BitgetAdapter(ExchangeAdapter):
             return orders
 
     ### low level functions end
+    
+    def get_total_balance(self):
+        balance=self._exchange.fetch_balance(params=self._exchange_params)
+        # changed to free - since 'total' is not working anymore 
+        total = float(balance.get('free').get(self._exchange_params['code']))
+        return total
 
     def get_contract_size(self, symbol):
         return self._markets[symbol]['contractSize'] / float(self._markets[symbol]['info']['sizeMultiplier'])

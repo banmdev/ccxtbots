@@ -92,29 +92,34 @@ class BaseBot(BaseClass):
         log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
         
         logging.info(f'{log_prefix} I am not in a position anymore - cleaning up previous orders, files or dataframes')
+        time.sleep(5)
+        # try to get a clean state
+        self.refresh_active_orders()
         
         try:
             
             if self.last_sl_order_id is not None:
-                self._ea.cancel_order(self.last_sl_order_id, self.symbol)
-                
+
                 for dir in ['sell', 'buy']:
                     if self.last_sl_order_id in self._open_stop_orders_by_id[dir]:
+                        self._ea.cancel_order(self.last_sl_order_id, self.symbol)
                         del(self._open_stop_orders_by_id[dir][self.last_sl_order_id])
                     
                 self.last_sl_order_id = None
         
             if self.last_tp_order_id is not None:
-                self._ea.cancel_order(self.last_tp_order_id, self.symbol)
-                
+
                 for dir in ['sell', 'buy']:
                     if self.last_tp_order_id in self._open_limit_orders_by_id[dir]:
+                        self._ea.cancel_order(self.last_tp_order_id, self.symbol)
                         del(self._open_limit_orders_by_id[dir][self.last_tp_order_id])
                 
                 self.last_tp_order_id = None
                 
+        # todo - handle "Order does not exist exception directly"
+        
         except Exception as e:
-            logging.exception(f'{log_prefix} WARN: Could not cancel existing TP/SL orders', Exception(e))
+            logging.exception(f'{log_prefix} WARN: Could not cancel existing TP/SL orders ', Exception(e))
             raise
 
 
@@ -264,9 +269,11 @@ class BaseBot(BaseClass):
                 
                     logging.info(f'{log_prefix} Create opposite {buy_sell} order (take profit) of size {self._current_size} at {price}')
                     if self._current_long == True:
-                        order = self._ea.create_limit_sell_order(self.symbol, self._current_size, price)
+                        # order = self._ea.create_limit_sell_order(self.symbol, self._current_size, price)
+                        order = self._ea.close_long_limit_order(self.symbol, self._current_size, price)
                     else:
-                        order = self._ea.create_limit_buy_order(self.symbol, self._current_size, price)
+                        # order = self._ea.create_limit_buy_order(self.symbol, self._current_size, price)
+                        order = self._ea.close_short_limit_order(self.symbol, self._current_size, price)
             
                 except Exception as err:
                     logging.exception(f"{log_prefix} Unexpected {err=}, {type(err)=}")

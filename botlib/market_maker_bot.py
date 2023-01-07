@@ -304,7 +304,7 @@ class MarketMakerBot(BaseBot):
 
         except Exception as e:
 
-            logging.exception(f'({self.class_name()}.inposition_handler) symbol {self.symbol} WARN:', Exception(e))
+            logging.exception(f'({self.class_name()}.noposition_handler) symbol {self.symbol} WARN:', Exception(e))
             return
 
         else:

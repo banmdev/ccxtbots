@@ -4,6 +4,9 @@ import pandas as pd
 
 import ccxt
 
+# import pprint
+# pp = pprint.PrettyPrinter(indent=4)
+
 from base import BaseClass
 
 class ExchangeAdapter(BaseClass):
@@ -70,10 +73,18 @@ class ExchangeAdapter(BaseClass):
         self._exchange.cancel_order(order_id, symbol)
 
     def create_limit_buy_order(self, symbol, size, price):
-        order = self._exchange.create_limit_buy_order(symbol, size, price, self._trade_params_kill)
+        order = self._exchange.create_limit_buy_order(symbol, size, price, self._trade_params)
         return order
 
     def create_limit_sell_order(self, symbol, size, price):
+        order = self._exchange.create_limit_sell_order(symbol, size, price, self._trade_params)
+        return order
+    
+    def close_short_limit_order(self, symbol, size, price):
+        order = self._exchange.create_limit_buy_order(symbol, size, price, self._trade_params_kill)
+        return order
+
+    def close_long_limit_order(self, symbol, size, price):
         order = self._exchange.create_limit_sell_order(symbol, size, price, self._trade_params_kill)
         return order
 
@@ -130,13 +141,14 @@ class ExchangeAdapter(BaseClass):
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
 
         # TODO: complete  
-        tf_to_mins = { '5m': 5, '15m': 15, '1h': 60, '4h': 240 }
+        tf_to_mins = { '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 }
 
         # obtain only closed frames (5min * 60 * 1000)
         if only_closed == True:
             df = df[df.timestamp < int(time.time() * 1000) - tf_to_mins[timeframe] * 60 * 1000]
     
-        df['timestamp']= pd.to_datetime(df['timestamp'], unit='ms')
+        df['datetime']= pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index(pd.DatetimeIndex(df['datetime']), inplace=True)
 
         return df
 
