@@ -554,15 +554,9 @@ class BaseBot(BaseClass):
 
                 if self._open_position_bool == False:
                     
-                    # Trade was finished by exit handler ... force wait
-                    if self._exiting:
-                        logging.info(f'({self.class_name()}.main_loop) Trade was finished by exit handler ... force wait 5min!')
-                        time.sleep(300)
-                        
-                    self._exiting = False
-
                     # triggering orders to enter positions after timeout
                     if (timestamp < next_refresh):
+                        
                         logging.debug(f'({self.class_name()}.main_loop) Waiting for refresh!')
 
                     else:
@@ -575,7 +569,6 @@ class BaseBot(BaseClass):
                             time.sleep(5)
                             # try to get a clean state
                             self.refresh_active_orders()
-                            
                             self.finishtrade_handler()
 
                             # resetting all main state variables
@@ -587,6 +580,13 @@ class BaseBot(BaseClass):
 
                         # call the housekeeping handler
                         self.housekeeping_handler()
+                        
+                        # Last trade was finished by exit handler ... force wait
+                        if self._exiting:
+                            logging.info(f'({self.class_name()}.main_loop) Last trade was finished by exit handler ... force wait 5min!')
+                            time.sleep(300)
+                            
+                        self._exiting = False
                         
                         # load data feeds here to make sure child classes don't need to
                         # take care about it and only call the signal() function

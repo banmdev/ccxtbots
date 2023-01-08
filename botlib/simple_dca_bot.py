@@ -26,7 +26,7 @@ class SimpleDCABot(BaseBot):
 
 
         self._crv=0.525                # chance/risk value
-        self._min_roe = 0.1            # minimum roe 10% considering the high leverage
+        self._min_roe = 0.2            # minimum roe 10% considering the high leverage
         
         self._not_trading: bool = not_trading
 
