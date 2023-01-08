@@ -2,13 +2,11 @@ import logging
 
 from .basebot import BaseBot
 from exchange_adapters import ExchangeAdapter
-# from signal_generators import BuySignalGenerator
-# from signal_generators import ExtMMSignalGenerator
-# from signal_generators import SMA_15m_1d_SignalGenerator
-# from signal_generators import VectorCandleSignalGenerator
 from signal_generators import ExtendedSignalGenerator
 from order_models import FixedTPSLModel
 
+# import pprint
+# pp = pprint.PrettyPrinter(indent=4)
 
 class SimpleTPSLBot(BaseBot):
     
@@ -23,7 +21,7 @@ class SimpleTPSLBot(BaseBot):
         if short_model.direction != 'short':
             raise ValueError(f"""({self.class_name()}.__init__) Invalid trade direction for short model: {short_model.direction}, must be short""")
 
-        self._signal_generator: ExtendedSignalGenerator = signal_generator
+        # self._signal_generator: ExtendedSignalGenerator = signal_generator
         self._long_model: FixedTPSLModel = long_model
         self._short_model: FixedTPSLModel = short_model
         
@@ -33,7 +31,7 @@ class SimpleTPSLBot(BaseBot):
         self._current_sell_order_id: str = None
         self._not_trading: bool = not_trading
         
-        super().__init__(exchange_adapter, symbol, ticks, refresh_timeout)
+        super().__init__(exchange_adapter, symbol, signal_generator, ticks, refresh_timeout)
             
     @property
     def leverage(self):
@@ -62,33 +60,40 @@ class SimpleTPSLBot(BaseBot):
         
         log_prefix = f"({self.class_name()}._cancel_current_buy) symbol {self.symbol}:"
         
-        try:
-            if self._current_buy_order_id is not None:
-                if self.matching_order_by_id(self._current_buy_order_id, 'limit', 'buy'):
-                    logging.info(f'{log_prefix} Cancel current buy order {self._current_buy_order_id}')
-                    self._ea.cancel_order(self._current_buy_order_id, self.symbol)
+       
+        if self._current_buy_order_id is not None:
+
+            if self.matching_order_by_id(self._current_buy_order_id, 'limit', 'buy'):
+
+                logging.info(f'{log_prefix} Cancel current buy order {self._current_buy_order_id}')
                 
-                self._current_buy_order_id = None
-        
-        except Exception as e:
-            logging.exception(f'{log_prefix} WARN: Could not cancel existing buy order', Exception(e))
-            raise
+                try:
+                    self._ea.cancel_order(self._current_buy_order_id, self.symbol)
+                except Exception as e:
+                    logging.exception(f'{log_prefix} WARN: Could not cancel existing buy order {self._current_buy_order_id}')
+                else:
+                    logging.info(f'{log_prefix} Current buy order {self._current_buy_order_id} cancelled')
+                    self._current_buy_order_id = None
         
     def _cancel_current_sell(self):
         
         log_prefix = f"({self.class_name()}._cancel_current_sell) symbol {self.symbol}:"
         
-        try:
-            if self._current_sell_order_id is not None:
-                if self.matching_order_by_id(self._current_sell_order_id, 'limit', 'sell'):
-                    logging.info(f'{log_prefix} Cancel current sell order {self._current_sell_order_id}')
+        if self._current_sell_order_id is not None:
+
+            if self.matching_order_by_id(self._current_sell_order_id, 'limit', 'sell'):
+
+                logging.info(f'{log_prefix} Cancel current sell order {self._current_sell_order_id}')
+                
+                try:
                     self._ea.cancel_order(self._current_sell_order_id, self.symbol)
+                except Exception as e:
+                    logging.exception(f'{log_prefix} WARN: Could not cancel existing sell order {self._current_sell_order_id}')
+                else:
+                    logging.info(f'{log_prefix} Current sell order {self._current_sell_order_id} cancelled')
+                    self._current_sell_order_id = None
                 
-                self._current_sell_order_id = None
-                
-        except Exception as e:
-            logging.exception(f'{log_prefix} WARN: Could not cancel existing sell order', Exception(e))
-            raise
+
         
         
         
@@ -141,28 +146,8 @@ class SimpleTPSLBot(BaseBot):
             # PRINT INFO
             if self._current_size != self._last_position_size:
                 logging.info(f"""{log_prefix} I am in a {long_short} position at {self._entryPrice} with size {self._current_size}, take profit at {price_tp} and stop loss at {price_sl}""")
-    
-    
-    def parse_signal(self, signal: dict, dir: str, default_li: float = None) -> tuple[float, float, float]:
-        log_prefix = f"({self.class_name()}.noposition_handler) symbol {self.symbol}:"
-        
-        if dir in signal: 
-        
-            if 'li' in signal[dir]:
-                li = float(self._ea.price_to_precision(self.symbol, signal[dir]['li']))
-            else:
-                li = float(self._ea.price_to_precision(self.symbol, default_li))
-            
-            sl = float(self._ea.price_to_precision(self.symbol, signal[dir]['sl'])) if 'sl' in signal[dir] else None
-            
-            tp = float(self._ea.price_to_precision(self.symbol, signal[dir]['tp'])) if 'tp' in signal[dir] else None
-            
-            return li, sl, tp
-        
-        else:
-            raise (f'{log_prefix} Direction {dir} not in signal')
                     
-    def noposition_handler(self):
+    def enter_position_handler(self):
         
         log_prefix = f"({self.class_name()}.noposition_handler) symbol {self.symbol}:"
 
@@ -180,32 +165,26 @@ class SimpleTPSLBot(BaseBot):
             max_risk_per_trade = ( total_balance * self.max_account_risk_per_trade ) 
             logging.info(f'{log_prefix} Total account balance: {total_balance} Max risk per trade: {max_risk_per_trade}')
 
-            try:            
-                # get indicators and current ask/bid
-                tf = self._signal_generator.timeframe
-                nb = self._signal_generator.num_bars
-                oc = self._signal_generator.only_closed
-                candles_df = self._ea.fetch_candles_df(self.symbol, timeframe=tf, num_bars=nb, only_closed=oc)
-                # todo --- multiple data to be obtained ...
-                # candles_df_d = self._ea.fetch_candles_df(self.symbol, timeframe='1d', num_bars=100, only_closed=False)
+            try:
                 [ask, bid] = self._ea.ask_bid(self.symbol)
-                signal = self._signal_generator.signal(ask, bid, candles_df)
+                signal = self.signal(ask, bid)
                 
             except Exception as e:
-                logging.exception(f'{log_prefix} symbol {self.symbol} WARN: Could not load candles, bid ask price or signal', Exception(e))
+                logging.exception(f'{log_prefix} WARN: Could not get bid ask price or signal')
                 return
 
             if 'buy' in signal:
                 try:
                     [ price, self._long_model.sl_fixed, self._long_model.tp_fixed ] = self.parse_signal(signal, 'buy', bid)
-                    # price = float(self._ea.price_to_precision(self.symbol, bid)) # just for simplicity ... need to ask the model?
+
                     size  = self._long_model.get_order_size(price, max_risk_per_trade)
                     tp = self._long_model.get_tp_price_size(size, price)[0]
                     sl = self._long_model.get_sl_price_size(size, price)[0]
+                    
                     if self._not_trading:
                         logging.info(f'{log_prefix} NOT TRADING: Buy order of size: {size} at price: {price} would have been created - with fixed sl at {sl} and tp at {tp}')
                     else:
-                        logging.info(f'{log_prefix} Buy order of size: {size} at price: {price} created - with fixed sl at {sl} and tp at {tp}, id {self._current_buy_order_id}')
+                        logging.info(f'{log_prefix} Create Buy order of size: {size} at price: {price} created - with fixed sl at {sl} and tp at {tp}')
                         order = self._ea.create_limit_buy_order(self.symbol, size=size, price=price)
                         self._current_buy_order_id = order['id']
                         logging.info(f'{log_prefix} Buy order id: {self._current_buy_order_id}')
@@ -215,15 +194,17 @@ class SimpleTPSLBot(BaseBot):
 
             if 'sell' in signal:
                 try:
-                    # price = float(self._ea.price_to_precision(self.symbol, ask)) # just for simplicity ... need to ask the model?
+
                     [ price, self._short_model.sl_fixed, self._short_model.tp_fixed ] = self.parse_signal(signal, 'sell', ask)
+                    
                     size  = self._short_model.get_order_size(price, max_risk_per_trade)
                     tp = self._short_model.get_tp_price_size(size, price)[0]
                     sl = self._short_model.get_sl_price_size(size, price)[0]
+                    
                     if self._not_trading:
                         logging.info(f'{log_prefix} NOT TRADING: Sell order of size: {size} at price: {price} would have been created - with fixed sl at {sl} and tp at {tp}')    
                     else:
-                        logging.info(f'{log_prefix} Sell order of size: {size} at price: {price} created - with fixed sl at {sl} and tp at {tp}, id {self._current_sell_order_id}')
+                        logging.info(f'{log_prefix} Create Sell order of size: {size} at price: {price} created - with fixed sl at {sl} and tp at {tp}')
                         order = self._ea.create_limit_sell_order(self.symbol, size=size, price=price)
                         self._current_sell_order_id = order['id']
                         logging.info(f'{log_prefix} Sell order id: {self._current_sell_order_id}')
@@ -231,7 +212,5 @@ class SimpleTPSLBot(BaseBot):
                 except Exception as e:
                     logging.exception(f'{log_prefix} WARN: Could not execute the sell order')
                 
-            # if self.trend is None:
-            # logging.info(f'{log_prefix} Not trading because trend = None')
 
     

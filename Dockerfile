@@ -17,4 +17,4 @@ COPY test_bots_phemex.py test_bots_phemex.py
 COPY test_bots_bitget.py test_bots_bitget.py
 COPY test_exchange_adapters.py test_exchange_adapters.py 
 
-CMD [ "python3", "test_bots_phemex.py" ] 
+CMD [ "python3", "test_bots_simpledca.py" ] 

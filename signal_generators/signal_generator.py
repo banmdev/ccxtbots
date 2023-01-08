@@ -1,5 +1,7 @@
 from base import BaseClass
 
+import pandas as pd
+
 class SignalGenerator(BaseClass):
 
     # returns buy, sell, both or none
@@ -28,35 +30,50 @@ class ExtendedSignalGenerator(SignalGenerator):
     
     def __init__(self):
         
-        self._timeframe: str = '5m'
-        self._num_bars: int = 50
-        self._only_closed: bool = True # pls change with caution
-     
+        self.feeds = { 
+                      'default': {
+                          'timeframe': '5m',
+                          'num_bars': 50, 
+                          'only_closed': True,
+                          'df': None 
+                        } 
+                      }
+        
+        self.verbose = False
+        
     @property
     def timeframe(self) -> str:
-        return self._timeframe
+        return self.feeds['default']['timeframe']
 
     @timeframe.setter
     def timeframe(self, value: str):
-        self._timeframe = value
+        self.feeds['default']['timeframe'] = value
 
     @property
     def num_bars(self) -> int:
-        return self._num_bars
+        return self.feeds['default']['num_bars']
 
     @num_bars.setter
     def num_bars(self, value: int):
-        self._num_bars = value
+        self.feeds['default']['num_bars'] = value
         
     @property
     def only_closed(self) -> bool:
-        return self._only_closed
+        return self.feeds['default']['only_closed']
 
     @only_closed.setter
     def only_closed(self, value: bool):
-        self._only_closed = value
+        self.feeds['default']['only_closed'] = value
         
-    def signal(self, ask: float, bid: float, df) -> dict:
+    @property
+    def df(self) -> pd.DataFrame:
+        return self.feeds['default']['df']
+
+    @df.setter
+    def df(self, value: pd.DataFrame):
+        self.feeds['default']['df'] = value
+        
+    def signal(self, ask: float = None, bid: float = None) -> dict:
     
         signal = {}
         

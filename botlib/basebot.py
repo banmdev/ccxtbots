@@ -3,17 +3,24 @@ import time
 
 from base import BaseClass
 from exchange_adapters import ExchangeAdapter
+from signal_generators import ExtendedSignalGenerator
 
 class BaseBot(BaseClass):
 
-    def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, ticks: int = 1, refresh_timeout: int = 120):
+    def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, 
+                 signal_generator: ExtendedSignalGenerator, 
+                 ticks: int = 1, refresh_timeout: int = 120):
 
         # ticks and refresh timeout in seconds
         self._ticks: int = ticks
         self._refresh_timeout: int = int(refresh_timeout * 1000) 
         
-        # _ea stands for Exchange Adapter
+        # _ea means for Exchange Adapter
         self._ea: ExchangeAdapter = exchange_adapter
+        
+        # _sg means Signal Generator
+        self._sg: ExtendedSignalGenerator = signal_generator
+        self._sg.verbose = False
 
         # symbol to trade
         self._symbol: str = symbol
@@ -75,6 +82,14 @@ class BaseBot(BaseClass):
     @last_sl_order_id.setter
     def last_sl_order_id(self, value):
         self._last_sl_order_id = value
+        
+    @property
+    def signal_verbose(self) -> bool:
+        return self._sg.verbose
+
+    @signal_verbose.setter
+    def signal_verbose(self, value: bool):
+        self._sg.verbose = value
 
     # TODO- implement all other setters and getters
 
@@ -91,47 +106,45 @@ class BaseBot(BaseClass):
     def housekeeping_handler(self):
         log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
         
-        logging.info(f'{log_prefix} I am not in a position anymore - cleaning up previous orders, files or dataframes')
-        time.sleep(5)
-        # try to get a clean state
-        self.refresh_active_orders()
+        logging.info(f'{log_prefix} I am not in a position - cleaning up previous orders, files or dataframes')
         
-        try:
-            
-            if self.last_sl_order_id is not None:
+        if self.last_sl_order_id is not None:
 
-                for dir in ['sell', 'buy']:
-                    if self.last_sl_order_id in self._open_stop_orders_by_id[dir]:
+            for dir in ['sell', 'buy']:
+                if self.last_sl_order_id in self._open_stop_orders_by_id[dir]:
+                    logging.info(f'{log_prefix} Cancel current SL order: {self.last_sl_order_id}')
+                    try:
                         self._ea.cancel_order(self.last_sl_order_id, self.symbol)
+                    except Exception as e:
+                        logging.exception(f'{log_prefix} WARN: Could not cancel existing SL order: {self.last_sl_order_id}')
+                    else:
+                        logging.info(f'{log_prefix} Success: Canceled SL order: {self.last_sl_order_id}')
                         del(self._open_stop_orders_by_id[dir][self.last_sl_order_id])
-                    
-                self.last_sl_order_id = None
-        
-            if self.last_tp_order_id is not None:
+                        self.last_sl_order_id = None
+    
+        if self.last_tp_order_id is not None:
 
-                for dir in ['sell', 'buy']:
-                    if self.last_tp_order_id in self._open_limit_orders_by_id[dir]:
+            for dir in ['sell', 'buy']:
+                if self.last_tp_order_id in self._open_limit_orders_by_id[dir]:
+                    logging.info(f'{log_prefix} Cancel current TP order: {self.last_tp_order_id}')
+                    try:
                         self._ea.cancel_order(self.last_tp_order_id, self.symbol)
+                    except Exception as e:
+                        logging.exception(f'{log_prefix} WARN: Could not cancel existing TP order: {self.last_tp_order_id}')
+                    else:
+                        logging.info(f'{log_prefix} Success: Canceled TP order: {self.last_tp_order_id}')                           
                         del(self._open_limit_orders_by_id[dir][self.last_tp_order_id])
-                
-                self.last_tp_order_id = None
-                
-        # todo - handle "Order does not exist exception directly"
-        
-        except Exception as e:
-            logging.exception(f'{log_prefix} WARN: Could not cancel existing TP/SL orders ', Exception(e))
-            raise
+                        self.last_tp_order_id = None
 
+    def enter_position_handler(self):
 
-    def noposition_handler(self):
-
-        logging.debug(f'({self.class_name()}.noposition_handler) symbol {self.symbol}: I am not in a position - waiting for entry signals and new order checks!')
+        logging.debug(f'({self.class_name()}.enter_position_handler) symbol {self.symbol}: I am not in a position - waiting for entry signals and new order checks!')
 
     def inposition_handler(self):
         
         logging.debug(f'({self.class_name()}.inposition_handler) symbol {self.symbol}: I am in a position, current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
         
-    def exitposition_handler(self):
+    def exit_position_handler(self):
         
          logging.debug(f'({self.class_name()}.exitposition_handler) symbol {self.symbol}: Exit position handler, current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
 
@@ -147,15 +160,61 @@ class BaseBot(BaseClass):
     def shutdown_handler(self):
         log_prefix = f"({self.class_name()}.shutdown_handler) symbol {self.symbol}:"
 
-        logging.info(f'{log_prefix} Shutdown the bot')
+        logging.info(f'{log_prefix} Shutdown the bot ....')
+        
+        time.sleep(5)
+        # try to get a clean state ...
+        self.refresh_active_orders()
         
         # only cancel orders and delete files when not on a position
         if self._open_position_bool == False:
             self.housekeeping_handler()
+            
+        logging.info(f'{log_prefix} Shutdown finished ....')
 
+    # Load datafeeds
+    def load_data_feeds(self):
+        
+        log_prefix = f"({self.class_name()}.load_data_feeds) symbol {self.symbol}:"
+        
+        for feed in self._sg.feeds:
+            tf = self._sg.feeds[feed]['timeframe']
+            nb = self._sg.feeds[feed]['num_bars']
+            oc = self._sg.feeds[feed]['only_closed']
+            logging.info(f"{log_prefix} Obtaining datafeed {feed} timeframe: {tf} num_bars: {nb} only_closed: {oc}")
+            try:
+                self._sg.feeds[feed]['df'] = self._ea.fetch_candles_df(self.symbol, 
+                                                                            timeframe=tf, 
+                                                                            num_bars=nb, 
+                                                                            only_closed=oc)
+            except Exception as e:
+                logging.exception(f'{log_prefix} WARN: Could not load candles for {feed}')
+                self._sg.feeds[feed]['df'] = None
+    
+    # wrapping the signal generator
+    def signal(self, ask: float, bid: float):
+        return self._sg.signal(ask, bid)
+    
+    # Parse a signal dict returned from an Extended Signal Generator
+    def parse_signal(self, signal: dict, dir: str, default_li: float = None) -> tuple[float, float, float]:
+        log_prefix = f"({self.class_name()}.parse_signal) symbol {self.symbol}:"
+        
+        if dir in signal: 
+        
+            if 'li' in signal[dir]:
+                li = float(self._ea.price_to_precision(self.symbol, signal[dir]['li']))
+            else:
+                li = float(self._ea.price_to_precision(self.symbol, default_li))
+            
+            sl = float(self._ea.price_to_precision(self.symbol, signal[dir]['sl'])) if 'sl' in signal[dir] else None
+            
+            tp = float(self._ea.price_to_precision(self.symbol, signal[dir]['tp'])) if 'tp' in signal[dir] else None
+            
+            return li, sl, tp 
+        else:
+            raise (f'{log_prefix} Direction {dir} not in signal')    
 
     # General functions for order management:
-
     def matching_limit_order(self, side: str, price: float, amount: float) -> dict:
         log_prefix = f"({self.class_name()}.maintain_tp_order) symbol {self.symbol}:"
         
@@ -208,6 +267,14 @@ class BaseBot(BaseClass):
             size = self._current_size
 
         order = None
+        
+        # REFRESH OPEN POSITIONS
+        # query open positions again, things may have changed, e.g. take profit executed
+        self.refresh_open_position()
+        
+        if self._open_position_bool == False:
+            logging.warning(f'{log_prefix} I am NOT in a position anymore ... exiting the function')
+            return
 
         if self._open_position_bool == True:
 
@@ -252,6 +319,12 @@ class BaseBot(BaseClass):
             size = self._current_size
 
         order = None
+        
+        self.refresh_open_position()
+        
+        if self._open_position_bool == False:
+            logging.warning(f'{log_prefix} I am NOT in a position anymore ... exiting the function')
+            return
 
         if self._open_position_bool == True:
 
@@ -412,10 +485,14 @@ class BaseBot(BaseClass):
 
                         # call the finishtrade_handler to record trade data, e.g. pnl
                         if self._last_open_position_bool == True:
+                            
+                            time.sleep(5)
+                            # try to get a clean state
+                            self.refresh_active_orders()
+                            
                             self.finishtrade_handler()
 
                             # resetting all main state variables
-                            # I dont want touch them in child classes
                             self._last_open_position_bool = False
                             self._last_current_long = None
                             self._last_position_size = None
@@ -423,15 +500,20 @@ class BaseBot(BaseClass):
                         # call the housekeeping handler
                         self.housekeeping_handler()
                         
-                        # call no position handler
-                        self.noposition_handler()
+                        # load data feeds here to make sure child classes don't need to
+                        # take care about it and only call the signal() function
+                        self.load_data_feeds()
+                        
+                        # call enter_position handler to process entry signals ...
+                        # and enter the position
+                        self.enter_position_handler()
 
                 else:
                     
                     next_refresh = 0
 
                     # exit_handler to process exit signals ...
-                    self.exitposition_handler()
+                    self.exit_position_handler()
 
                     # in position handler ...
                     self.inposition_handler()

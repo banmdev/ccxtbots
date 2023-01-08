@@ -1,7 +1,5 @@
 import logging
-import pandas as pd
 import pandas_ta as ta
-import numpy as np
 
 from .signal_generator import SignalGenerator
 from .signal_generator import ExtendedSignalGenerator
@@ -52,14 +50,30 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
     # 
     def __init__(self, ask_spread: float = 0.001, bid_spread: float = 0.001, sl_buffer: float = 0.001):
         
-        self.ask_spread = ask_spread
-        self.bid_spread = bid_spread
+        super().__init__()
+
+        self.feeds = { 
+                'default': {
+                    'timeframe': '15m',
+                    'num_bars': 50, 
+                    'only_closed': True,
+                    'df': None
+                    },
+                }
         
+        self.ask_spread = ask_spread
+        self.bid_spread = bid_spread   
         self.sl_buffer = sl_buffer
         
-    def signal(self, ask: float, bid: float, df):
+    def signal(self, ask: float, bid: float):
         
         signal = {}
+        
+        if self.df is None:
+            logging.warn(f'({self.class_name()}.signal) No default dataframe available - exit function')
+            return signal
+        else:
+            df = self.df
         
         mid = float((ask + bid)/2)
         mid = round(mid,5)
@@ -87,16 +101,26 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
         # ask_limit = ask * (1 + self.ask_spread)
         
         # TODO - checks if meaningful ... considering current bid/ask
-        sl_sell_price = recent_swing_high * (1 + self.sl_buffer)
-        sl_buy_price = recent_swing_low * (1 - self.sl_buffer)
+        if self.verbose:
+            print(f"==== {self.class_name()}.signal VERBOSE ====")
+            print('Dataframe from My Exchange ====>')
+            print(df)
+            print(f'recent_ema  = {recent_ema}')
+            print(f'recent_rsi  = {recent_rsi}')
+            print(f'recent_atr  = {recent_atr}')
+            print(f'recent_natr = {recent_natr}')
+            print(f'recent_swing_high = {recent_swing_high}')
+            print(f'recent_swing_low  = {recent_swing_low}')
 
         # directional trading
         if mid < recent_ema and recent_rsi > 30:
-            ask_limit = recent_ema * (1 - self.ask_spread / 2)
+            ask_limit = ask * (1 + self.ask_spread)
+            sl_sell_price = recent_swing_high * (1 + self.sl_buffer)
             signal['sell'] = { 'li': ask_limit, 'sl': sl_sell_price }
             trend = 'sell'
         if mid > recent_ema and recent_rsi < 70:
-            bid_limit = recent_ema * (1 + self.bid_spread / 2)
+            bid_limit = bid * (1 - self.bid_spread)
+            sl_buy_price = recent_swing_low * (1 - self.sl_buffer)
             signal['buy'] = { 'li': bid_limit, 'sl': sl_buy_price }
             trend = 'buy'
            

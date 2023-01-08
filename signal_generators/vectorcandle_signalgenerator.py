@@ -17,18 +17,27 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
     # 
     def __init__(self, binance_symbol: str):
         
+        super().__init__()
+        
         # get data for the corresponding spot symbol on binance
         # because the volume is and data accuracy is better
         self._binance_symbol = binance_symbol
         
+        self.feeds = { 
+                'default': {
+                    'timeframe': '15m',
+                    'num_bars': 30, 
+                    'only_closed': True,
+                    'df': None
+                    }
+                }
+                
         # timeframe to obtain from binance ... should be consistent with
-        # the actual exchange 
-        self._timeframe: str = '15m'
-        self._num_bars: int = 30
+        # the actual exchange         
         self._buy_rsi: float = 30
         self._sell_rsi: float = 70
         self._min_change: float = 0.4/100 # change must be at least 0.4%  
-        self._only_closed: bool = True # pls do not change because some exchanges only deliver closed candles
+
     
     def vector_candles(self):
         
@@ -37,15 +46,15 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
             'enableRateLimit': True,
         })
         
-        bars = exchange.fetch_ohlcv(self._binance_symbol, timeframe=self._timeframe, limit=self._num_bars)
+        bars = exchange.fetch_ohlcv(self._binance_symbol, timeframe=self.timeframe, limit=self.num_bars)
 
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
         tf_to_mins = { '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 }
     
         # make sure to obtain only closed frames (15min * 60 * 1000)
-        if self._only_closed:
-            df = df[df.timestamp < int(time.time() * 1000) - tf_to_mins[self._timeframe] * 60 * 1000]
+        if self.only_closed:
+            df = df[df.timestamp < int(time.time() * 1000) - tf_to_mins[self.timeframe] * 60 * 1000]
 
         df['datetime']= pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index(pd.DatetimeIndex(df['datetime']), inplace=True)
@@ -126,11 +135,17 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
 
             
         
-    def signal(self, ask: float, bid: float, df: pd.DataFrame):
+    def signal(self, ask: float = None, bid: float = None):
         
         signal = {}
         
         df_vector = self.vector_candles()
+        
+        if self.df is None:
+            logging.warn(f'({self.class_name()}.signal) No default dataframe available - exit function')
+            return signal
+        else:
+            df = self.df
         
         # the vector df from binance
         last_vector_signal = df_vector['signal'].iloc[-1]
@@ -143,7 +158,17 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
         
         logging.info(f'({self.class_name()}.signal) Last Binance data frame: {last_vector_datetime} Last data frame: {last_df_datetime}')
         
-        # DEBUG: last_vector_signal = 'buy'
+        if self.verbose:
+            print(f"==== {self.class_name()}.signal VERBOSE ====")
+            print('Vector Candle Dataframe ====>:')
+            print(df_vector)
+            print(f'last_vector_signal = {last_vector_signal}')
+            print(f'last_vector_datetime = {last_vector_datetime}')
+            print('Dataframe from My Exchange ====>')
+            print(df)
+            print(f'last_df_datetime = {last_df_datetime}')
+            print(f'last_open  = {last_open}')
+            print(f'last_close = {last_close}')
         
         if last_vector_signal == 'sell':
             ask_limit = last_close

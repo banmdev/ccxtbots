@@ -6,10 +6,10 @@ from dotenv import load_dotenv
 from exchange_adapters import BitgetAdapter
 from order_models import FixedTPSLModel
 # from signal_generators import BuySignalGenerator
-# from signal_generators import ExtMMSignalGenerator
+from signal_generators import ExtMMSignalGenerator
 # from signal_generators import SMA_15m_1d_SignalGenerator
 # from signal_generators import VectorCandleSignalGenerator
-from signal_generators import HeikinAshiSignalGenerator
+# from signal_generators import HeikinAshiSignalGenerator
 from botlib import SimpleTPSLBot
 
 load_dotenv()
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         'password': BITGET_API_PASSWORD
     }
     params = {"type":"swap", "code":BITGET_MARGINCOIN}
-    symbol = 'ETH/USDT:USDT'
+    symbol = 'SOL/USDT:USDT'
 
     # adapter = PhemexAdapter(connect_params, params)
     adapter = BitgetAdapter(connect_params, params)
@@ -51,10 +51,10 @@ if __name__ == '__main__':
     # and take profit can be applied
     model_long = FixedTPSLModel(adapter, symbol=symbol, direction='long', tp_perc=0.01, sl_perc=0.0066)
     model_short = FixedTPSLModel(adapter, symbol=symbol, direction='short', tp_perc=0.01, sl_perc=0.0066)
-    # signal_generator = ExtMMSignalGenerator(ask_spread=0.0005, bid_spread=0.0005, sl_buffer=0.001)
+    signal_generator = ExtMMSignalGenerator(ask_spread=0.0005, bid_spread=0.0005, sl_buffer=0.001)
     # signal_generator = SMA_15m_1d_SignalGenerator()
-    # signal_generator = VectorCandleSignalGenerator(binance_symbol='BTCUSDT')
-    signal_generator = HeikinAshiSignalGenerator(binance_symbol='ETHUSDT') 
+    # signal_generator = VectorCandleSignalGenerator(binance_symbol='SOLUSDT')
+    # signal_generator = HeikinAshiSignalGenerator(binance_symbol='ETHUSDT') 
 
     bot = SimpleTPSLBot(exchange_adapter=adapter,
                                 symbol=symbol, 
@@ -63,7 +63,9 @@ if __name__ == '__main__':
                                 short_model=model_short,
                                 refresh_timeout=120,
                                 not_trading=False)
+    
     # for testing
+    bot.signal_verbose=False
     bot.max_account_risk_per_trade=0.01
 
     bot.main_loop()

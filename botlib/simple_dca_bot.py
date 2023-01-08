@@ -4,32 +4,33 @@ import time
 from .basebot import BaseBot
 from order_models import DCAOrderModel
 from exchange_adapters import ExchangeAdapter
-from signal_generators import SimpleMMSignalGenerator
-
+from signal_generators import ExtendedSignalGenerator
 
 # import pprint
 # pp = pprint.PrettyPrinter(indent=4)
 
-class MarketMakerBot(BaseBot):
+class SimpleDCABot(BaseBot):
 
-    def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, signal_generator: SimpleMMSignalGenerator, 
-                 long_model: DCAOrderModel, short_model: DCAOrderModel, ticks: int = 1, refresh_timeout: int = 120):
+    def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, signal_generator: ExtendedSignalGenerator, 
+                 long_model: DCAOrderModel, short_model: DCAOrderModel, ticks: int = 1, refresh_timeout: int = 120,
+                 not_trading: bool = False) -> None:
 
         self._dca_model_long  = long_model
         self._dca_model_short = short_model
-        self._signal_generator = signal_generator
 
         # used in the prepration handler
         self._leverage = 50            # default leverage - TODO: always try to obtain from exchange for a symbol
 
         # used in the noposition handler - could potentially be changed between trades
         self._max_account_risk_per_trade = 0.01 # 1% very small default
-        self._min_roe = 0.01           # minimum roe 1%
-        self._min_ask_spread = 0.0002  # minimum ask spread 0.02%
-        self._min_bid_spread = 0.0002  # minimum bid spread 0.02%
-        self._crv=0.525                # chance/risk value
 
-        super().__init__(exchange_adapter, symbol, ticks, refresh_timeout)
+
+        self._crv=0.525                # chance/risk value
+        self._min_roe = 0.01           # minimum roe 1%
+        
+        self._not_trading: bool = not_trading
+
+        super().__init__(exchange_adapter, symbol, signal_generator, ticks, refresh_timeout)
 
     @property
     def leverage(self):
@@ -48,6 +49,14 @@ class MarketMakerBot(BaseBot):
         self._max_account_risk_per_trade = value
 
     @property
+    def crv(self):
+        return self._crv
+
+    @crv.setter
+    def crv(self, value):
+        self._crv = value
+        
+    @property
     def min_roe(self):
         return self._min_roe
 
@@ -55,45 +64,15 @@ class MarketMakerBot(BaseBot):
     def min_roe(self, value):
         self._min_roe = value
 
-    @property
-    def min_bid_spread(self):
-        return self._min_bid_spread
-
-    @min_bid_spread.setter
-    def min_bid_spread(self, value):
-        self._min_bid_spread = value
-
-    @property
-    def min_ask_spread(self):
-        return self._min_ask_spread
-
-    @min_ask_spread.setter
-    def min_ask_spread(self, value):
-        self._min_ask_spread = value
-
-    @property
-    def crv(self):
-        return self._crv
-
-    @crv.setter
-    def crv(self, value):
-        self._crv = value
-
     def housekeeping_handler(self):
 
-        # the parent class takes care for the Stop loss and Take profit orders
+        # the parent class takes care for stop loss and take profit orders
         super().housekeeping_handler()
 
         log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
 
+        logging.info(f'{log_prefix} Cancel current DCA Orders ... ')
         try:
-            
-            # print(f'open_stop_orders_by_id = ')
-            # pp.pprint(self._open_stop_orders_by_id)
-            
-            # print(f'open_limit_orders_by_id = ')
-            # pp.pprint(self._open_limit_orders_by_id)
-            
             # cancel all orders first - only existing from the bot ...
             if self._dca_model_long.model_df is not None:
                 self.cancel_orders_based_on_model(self._dca_model_long.model_df)
@@ -102,11 +81,11 @@ class MarketMakerBot(BaseBot):
                 self.cancel_orders_based_on_model(self._dca_model_short.model_df)
                         
         except Exception as e:
-            logging.exception(f'{log_prefix} WARN: Could not cancel existing orders', Exception(e))
+            logging.exception(f'{log_prefix} WARN: Could not cancel existing DCA orders')
         else:
+            logging.info(f'{log_prefix} Success Current DCA Orders canceled... ')
             self._dca_model_long.remove_df_file()
             self._dca_model_short.remove_df_file()
-    
             self._dca_model_long.model_df = None
             self._dca_model_short.model_df = None
 
@@ -193,14 +172,6 @@ class MarketMakerBot(BaseBot):
             logging.warning(f'{log_prefix} WARN 1: SOMETHING WRONG IN MMR FUNCTION +++')
             raise
 
-        # REFRESH OPEN POSITIONS
-        # query open positions again, things may have changed, e.g. take profit executed
-        self.refresh_open_position()
-        
-        if self._open_position_bool == False:
-            logging.warning(f'{log_prefix} I am NOT in a position anymore ... do nothing with orders and exit this function')
-            return
-
         # ONLY OVERRIDE IF THE MODEL WAS RESTORED FROM FILE
         if was_restored:
             self.last_sl_order_id = model.get_identifier()
@@ -233,9 +204,8 @@ class MarketMakerBot(BaseBot):
 
         super().finishtrade_handler()
 
-        log_prefix=f"({self.class_name()}.noposition_handler) symbol {self.symbol}:"
+        log_prefix=f"({self.class_name()}.finishtrade_handler) symbol {self.symbol}:"
 
-        time.sleep(2)
         r_pnl = 0
         chk_tp_order = None
         chk_sl_order = None
@@ -277,100 +247,81 @@ class MarketMakerBot(BaseBot):
             logging.info(f'{log_prefix}: Potential {pl} of last trade {r_pnl}. Cumulative PNL while running the bot: {self._cum_pnl}')
 
 
-    def noposition_handler(self):
+    def enter_position_handler(self):
+        
+        log_prefix=f"({self.class_name()}.enter_position_handler) symbol {self.symbol}:"
 
-        logging.info(f'({self.class_name()}.noposition_handler) symbol {self.symbol}: I am not in a position - waiting for entry signals and new order checks!')
+        logging.info(f'{log_prefix} I am not in a position - waiting for entry signals and new order checks!')
  
         try:
             # check balance
             total_balance = self._ea.get_total_balance()
         except Exception as e:
 
-            logging.exception(f'({self.class_name()}.noposition_handler) symbol {self.symbol} ERROR: Could not check current balance')
+            logging.exception(f'{log_prefix} ERROR: Could not check current balance')
             raise Exception(e)
 
         else:
             max_risk_per_trade = ( total_balance * self.max_account_risk_per_trade ) 
-            logging.info(f'({self.class_name()}.noposition_handler) symbol {self.symbol} Total account balance: {total_balance} Max risk per trade: {max_risk_per_trade}')
-
-        try:
-
-            # get indicators
-            candles_df = self._ea.fetch_candles_df(self.symbol, timeframe='5m', num_bars=50, only_closed=True)
-
-            # get bid, ask and mid
-            [ask, bid] = self._ea.ask_bid(self.symbol)
-            mid = float(self._ea.price_to_precision(self.symbol, (ask + bid)/2))
-
-        except Exception as e:
-
-            logging.exception(f'({self.class_name()}.noposition_handler) symbol {self.symbol} WARN:', Exception(e))
-            return
-
-        else:
-
-            # signal: buy, sell, both, none
-            self.trend = self._signal_generator.signal(mid, candles_df)
-
-            # pricing calculations, spread and roi calc
-            ob_spread = ask - bid 
-            ob_spread_perc = ob_spread / mid
-            roe = ob_spread_perc * self.leverage - self._ea.maker_fees * 2
-
-            logging.info(f'({self.class_name()}.noposition_handler) symbol {self.symbol} bid {bid} ask {ask} spread {ob_spread:.5f} ob_spread_perc {ob_spread_perc:.3%} roi {roe:.2%} at leverage {self.leverage}')
-                        
-            # trading only if min_roi is possible
-            if roe < self.min_roe:
-                logging.warning(f'({self.class_name()}.noposition_handler) symbol {self.symbol} roe: {roe:.3%} < min_roi: {self.min_roe:.3%}! Not market making now!')
-                return
-                        
-            # simple spread calculation
-            spread_calc = roe / self.leverage
-            bid_spread_calc = spread_calc / 2
-            ask_spread_calc = bid_spread_calc
-
-            if bid_spread_calc < self.min_bid_spread:
-                logging.warning(f'({self.class_name()}.noposition_handler) symbol {self.symbol} bid_spread_calc: {bid_spread_calc:.3%} < min_bid_spread: {self.min_bid_spread:.3%}! Not market making!')
-                return
-
-            if ask_spread_calc < self.min_ask_spread:
-                logging.warning(f'({self.class_name()}.noposition_handler) symbol {self.symbol} ask_spread_calc: {ask_spread_calc:.3%} < min_ask_spread: {self.min_ask_spread:.3%}! Not market making!')
-                return
-
-            logging.info(f'({self.class_name()}.noposition_handler) symbol {self.symbol} bid_spread_calc {bid_spread_calc:.3%} ask_spread_calc {ask_spread_calc:.3%}')
+            logging.info(f'{log_prefix} symbol {self.symbol} Total account balance: {total_balance} Max risk per trade: {max_risk_per_trade}')
 
             try:
-                # creating the ask bid orders considering the trend (from strategy)
-                if self.trend == 'sell' or self.trend == 'both':
-
-                    # calc ask value - based on mid price
-                    ask_limit = float(self._ea.price_to_precision(self.symbol, mid * (1 + ask_spread_calc + self._ea.maker_fees)))
-                    self._dca_model_short.build_order_model(asset_price=ask_limit, risk_per_trade=max_risk_per_trade, crv=self.crv, leverage=self.leverage, min_roe=self.min_roe)
-                    
-                    self.create_orders_based_on_model(self._dca_model_short.model_df)
-
-                    print(f'({self.class_name()}.noposition_handler) symbol {self.symbol} DCA Model Order Dataframe for asks:')
-                    print(self._dca_model_short.model_df)
-
-                    self._dca_model_short.store_df()
-
-                if self.trend == 'buy' or self.trend == 'both':
-
-                    # calc bid value - based on mid price
-                    bid_limit = float(self._ea.price_to_precision(self.symbol, mid * (1 - bid_spread_calc - self._ea.maker_fees)))
-                    self._dca_model_long.build_order_model(asset_price=bid_limit, risk_per_trade=max_risk_per_trade, crv=self.crv, leverage=self.leverage, min_roe=self.min_roe)
-
-                    self.create_orders_based_on_model(self._dca_model_long.model_df)
-                    print(f'({self.class_name()}.noposition_handler) symbol {self.symbol} DCA Model Order Dataframe for bids:')
-                    print(self._dca_model_long.model_df)
-
-                    self._dca_model_long.store_df()
-
-                if self.trend is None:
-
-                     logging.info(f'({self.class_name()}.noposition_handler) symbol {self.symbol} Not trading because trend = None')
+                
+                # get bid, ask and mid
+                [ask, bid] = self._ea.ask_bid(self.symbol)
+                signal = self.signal(ask, bid)
 
             except Exception as e:
+                logging.exception(f'{log_prefix} WARN: Could not get bid ask price or signal')
+                return                
+                
+            # creating the ask bid orders considering the trend (from strategy)
+            if 'sell' in signal:
+                
+                # sl, tp ignored in the DCA Model
+                [ price, sl, tp ] = self.parse_signal(signal, 'sell', ask)
 
-                logging.exception(f'({self.class_name()}.inposition_handler) symbol {self.symbol} WARN:', Exception(e))
+                self._dca_model_short.build_order_model(asset_price=price, 
+                                                        risk_per_trade=max_risk_per_trade, 
+                                                        crv=self.crv, 
+                                                        leverage=self.leverage, 
+                                                        min_roe=self.min_roe)
+                
+                if self._not_trading:
+                    logging.info(f'{log_prefix} NOT TRADING: DCA Model Order Dataframe for asks (simulation):')
+                    print(self._dca_model_short.model_df)
+                else:
+                    try:
+                        self.create_orders_based_on_model(self._dca_model_short.model_df)
+                    except:
+                        logging.exception(f'{log_prefix} WARN: Could not create sell orders')
+                    else:
+                        print(f'{log_prefix} DCA Model Order Dataframe for asks (executed):')
+                        print(self._dca_model_short.model_df)
+                        self._dca_model_short.store_df()
+
+            if 'buy' in signal:
+                    
+                # sl, tp ignored in the DCA Model
+                [ price, sl, tp ] = self.parse_signal(signal, 'buy', bid)
+                    
+                self._dca_model_long.build_order_model(asset_price=price, 
+                                                       risk_per_trade=max_risk_per_trade, 
+                                                       crv=self.crv, 
+                                                       leverage=self.leverage, 
+                                                       min_roe=self.min_roe)
+
+                if self._not_trading:
+                    logging.info(f'{log_prefix} NOT TRADING: DCA Model Order Dataframe for bids (simulation):')
+                    print(self._dca_model_long.model_df)
+                else:
+                    try:
+                        self.create_orders_based_on_model(self._dca_model_long.model_df)
+                    except:
+                        logging.exception(f'{log_prefix} WARN: Could not create buy orders')
+                    else:
+                        print(f'{log_prefix} DCA Model Order Dataframe for bids (executed):')
+                        print(self._dca_model_long.model_df)
+                        self._dca_model_long.store_df()
+
 
