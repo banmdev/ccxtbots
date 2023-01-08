@@ -280,6 +280,8 @@ class BaseBot(BaseClass):
             if self._current_long == True:
                 
                 if bid >= trigger_price:
+                    if not self._trailing_sl_triggered:
+                        self._last_trail_sl_price = bid - trail_value # resetting
                     self._trailing_sl_triggered = True
                     
                 if self._last_trail_sl_price:
@@ -296,6 +298,8 @@ class BaseBot(BaseClass):
             else:
                 
                 if ask <= trigger_price:
+                    if not self._trailing_sl_triggered:
+                        self._last_trail_sl_price = ask + trail_value # resetting
                     self._trailing_sl_triggered = True
                 
                 if self._last_trail_sl_price:
@@ -397,32 +401,43 @@ class BaseBot(BaseClass):
             order = self.matching_limit_order(buy_sell, price, self._current_size)
 
             if order is None:
-                try:
+
                     # print(f'{log_prefix} self.last_tp_order_id: {self.last_tp_order_id}')
                     # cancel outdated tp order
+                    
+                    if self._exiting:
+                        time.sleep(2)
+                        self.refresh_active_orders()
+                    
+                    # check if an earlier order exist ...
                     if self.last_tp_order_id is not None and self.last_tp_order_id in self._open_limit_orders_by_id[buy_sell]:
                         logging.info(f"{log_prefix} Cancelling existing {buy_sell} take profit order because size differs from current_size {self._current_size} or price {price}")
-                        self._ea.cancel_order(self.last_tp_order_id, self.symbol)
-                
+                        try:
+                            self._ea.cancel_order(self.last_tp_order_id, self.symbol)
+                        except Exception as e:
+                            logging.exception(f'{log_prefix} WARN: Could not cancel existing take profit order {self.last_tp_order_id} ... exiting')
+                            return
+                        else:
+                            logging.info(f'{log_prefix} Success: Current take profit order {self.last_tp_order_id} cancelled')
+                            self._last_tp_order_id = None
+  
                     logging.info(f'{log_prefix} Create opposite {buy_sell} order (take profit) of size {self._current_size} at {price}')
-                    if self._current_long == True:
-                        # order = self._ea.create_limit_sell_order(self.symbol, self._current_size, price)
-                        order = self._ea.close_long_limit_order(self.symbol, self._current_size, price)
+                    try:
+                        if self._current_long == True:
+                            order = self._ea.close_long_limit_order(self.symbol, self._current_size, price)
+                        else:
+                            order = self._ea.close_short_limit_order(self.symbol, self._current_size, price)
+                    except Exception as e:
+                        logging.exception(f'{log_prefix} WARN: Could not create new take profit order ... exiting')
+                        return
                     else:
-                        # order = self._ea.create_limit_buy_order(self.symbol, self._current_size, price)
-                        order = self._ea.close_short_limit_order(self.symbol, self._current_size, price)
+                        logging.info(f"{log_prefix} Success: Opposite {buy_sell} order (take profit) with id {order['id']} of size {self._current_size} at {price} created")
+                        self._last_tp_order_id = order['id']
+                        return order
             
-                except Exception as err:
-                    logging.exception(f"{log_prefix} Unexpected {err=}, {type(err)=}")
-                    raise err
-                else:
-                    logging.info(f"{log_prefix} Opposite {buy_sell} order (take profit) with id {order['id']} of size {self._current_size} at {price} created")
             else:
+            
                 logging.debug(f'{log_prefix} Matching active opposite close ({buy_sell}) limit order already exists at {price}')
-
-            self.last_tp_order_id = order['id']
-        
-        return order
 
 
     def refresh_active_orders(self):
@@ -539,6 +554,11 @@ class BaseBot(BaseClass):
 
                 if self._open_position_bool == False:
                     
+                    # Trade was finished by exit handler ... force wait
+                    if self._exiting:
+                        logging.info(f'({self.class_name()}.main_loop) Trade was finished by exit handler ... force wait 5min!')
+                        time.sleep(300)
+                        
                     self._exiting = False
 
                     # triggering orders to enter positions after timeout
