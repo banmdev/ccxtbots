@@ -100,6 +100,8 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
         # bid_limit = bid * (1 - self.bid_spread)
         # ask_limit = ask * (1 + self.ask_spread)
         
+        trend = None
+        
         # TODO - checks if meaningful ... considering current bid/ask
         if self.verbose:
             print(f"==== {self.class_name()}.signal VERBOSE ====")
