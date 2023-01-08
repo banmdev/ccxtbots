@@ -26,7 +26,7 @@ class SimpleDCABot(BaseBot):
 
 
         self._crv=0.525                # chance/risk value
-        self._min_roe = 0.01           # minimum roe 1%
+        self._min_roe = 0.1            # minimum roe 10% considering the high leverage
         
         self._not_trading: bool = not_trading
 
@@ -111,17 +111,15 @@ class SimpleDCABot(BaseBot):
         self.leverage = self._ea.set_leverage_for_symbol(self.symbol, 50)
         logging.info(f'{log_prefix} Leverage is now {self.leverage}')
 
-    def inposition_handler(self):
-        log_prefix = f"({self.class_name()}.inposition_handler) symbol {self.symbol}:"
+    def restore_handler(self):
         
-        logging.debug(f'{log_prefix} I am in a position (1): current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
-        logging.debug(f'{log_prefix} I am in a position (2): last_tp_order_id: {self._last_tp_order_id}, last_sl_order_id: {self._last_sl_order_id}')
-
+        log_prefix = f"({self.class_name()}.restore_handler) symbol {self.symbol}:"
+        
         # TODO - Find order with the longest delta (max aks, min bid) and use this order as id
         # TODO - Dont query the _open_sl_orders_[long|short] lists directly
         sl_order_bid = self._open_sl_orders_long[0] if len(self._open_sl_orders_long) > 0 else None
         sl_order_ask = self._open_sl_orders_short[0] if len(self._open_sl_orders_short) > 0 else None
-        was_restored = False
+        self._was_restored = False
 
         # RESTORE
         # trying to restore last long and short models in case of a restart
@@ -130,7 +128,7 @@ class SimpleDCABot(BaseBot):
                 o_id = sl_order_bid['id']
                 logging.info(f'{log_prefix} Have an open sl_order_bid {o_id} ... restoring df ...')
                 self._dca_model_long.restore_df(o_id)
-                was_restored = True
+                self._was_restored = True
         else:
             logging.debug(f'{log_prefix} Have an existing long model from previous run...')
 
@@ -139,9 +137,38 @@ class SimpleDCABot(BaseBot):
                 o_id = sl_order_ask['id']
                 logging.info(f'{log_prefix} Have an open sl_order_ask {o_id} ... restoring df ...')
                 self._dca_model_short.restore_df(o_id)
-                was_restored = True
+                self._was_restored = True
         else:
             logging.debug(f'{log_prefix} Have an existing short model from previous run...')
+        
+        
+    def exit_position_handler(self):
+        log_prefix = f"({self.class_name()}.exit_position_handler) symbol {self.symbol}:"
+        
+        if self._current_long == True:
+            long_short = "long"
+            model = self._dca_model_long            
+        else:
+            long_short = "short"
+            model = self._dca_model_short
+            
+        # PROCESSING EXIT SIGNALS ...
+        
+        # MAINTAIN TRAILING SL TO TAKE MININUM PROFIT
+        [trig_price, tr_value] = model.get_trsl_price_value(self._current_size)
+        logging.debug(f'{log_prefix} {long_short} Trailing stop loss will be triggered at {trig_price} with trail value of {tr_value}')
+        
+        self.maintain_trail_sl(trigger_price=trig_price, trail_value=tr_value)
+        
+        if self._exiting:
+            logging.info(f'{log_prefix} Exiting the {long_short} position at {self._entryPrice} with size {self._current_size}')
+            
+
+    def inposition_handler(self):
+        log_prefix = f"({self.class_name()}.inposition_handler) symbol {self.symbol}:"
+        
+        logging.debug(f'{log_prefix} I am in a position (1): current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
+        logging.debug(f'{log_prefix} I am in a position (2): last_tp_order_id: {self._last_tp_order_id}, last_sl_order_id: {self._last_sl_order_id}')
 
         # CLEAN UP OPPOSITE ORDERS
         # point to the right model and clean up the opposite side, this is not a grid bot
@@ -154,7 +181,6 @@ class SimpleDCABot(BaseBot):
             if self._dca_model_short.model_df is not None:
                 logging.info(f'{log_prefix} I entered a long position ... cleaning up opposite sell orders ...')
                 self.cancel_orders_based_on_model(self._dca_model_short.model_df)
-                sl_order_ask = None
                 self._dca_model_short.model_df = None
 
         elif self._current_long == False:
@@ -166,14 +192,13 @@ class SimpleDCABot(BaseBot):
             if self._dca_model_long.model_df is not None:
                 logging.info(f'{log_prefix} I entered a short position ... cleaning up opposite buy orders ...')
                 self.cancel_orders_based_on_model(self._dca_model_long.model_df)
-                sl_order_bid = None
                 self._dca_model_long.model_df = None
         else:
             logging.warning(f'{log_prefix} WARN 1: SOMETHING WRONG IN MMR FUNCTION +++')
             raise
 
         # ONLY OVERRIDE IF THE MODEL WAS RESTORED FROM FILE
-        if was_restored:
+        if self._was_restored:
             self.last_sl_order_id = model.get_identifier()
             self.last_tp_order_id = model.get_latest_tp_order_id_by_size(self._current_size)      
 
@@ -189,14 +214,16 @@ class SimpleDCABot(BaseBot):
 
         # UPDATE THE MODEL
         # Save tp_order_id and sl_order_id in the respective model 
-        if last_tp_id != tp_order['id']:
-            model.update_tp_order_id_by_price(limit_tp, tp_order['id'])
+        if tp_order:
+            if last_tp_id != tp_order['id']:
+                model.update_tp_order_id_by_price(limit_tp, tp_order['id'])
         
-        if last_sl_id != sl_order['id']:
-            model.update_sl_order_id_by_price(limit_sl, sl_order['id'])
+        if sl_order:
+            if last_sl_id != sl_order['id']:
+                model.update_sl_order_id_by_price(limit_sl, sl_order['id'])
 
         # PRINT INFO
-        if self._current_size != self._last_position_size:
+        if self._open_position_bool and self._current_size != self._last_position_size:
             logging.info(f'{log_prefix} I am in a {long_short} position at {self._entryPrice} with size {self._current_size}, take profit at {limit_tp} and stop loss at {limit_sl}')
     
 

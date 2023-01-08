@@ -126,7 +126,7 @@ class SimpleTPSLBot(BaseBot):
             self.maintain_tp_order(price_tp, size_tp)
             
             # PRINT INFO
-            if self._current_size != self._last_position_size:
+            if self._open_position_bool and self._current_size != self._last_position_size:
                 logging.info(f"""{log_prefix} I am in a {long_short} position at {self._entryPrice} with size {self._current_size}, take profit at {price_tp} and stop loss at {price_sl}""")
     
         if self._current_long == False:

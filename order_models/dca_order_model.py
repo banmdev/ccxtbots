@@ -233,20 +233,22 @@ class DCAOrderModel(OrderModel):
             # crv based calc
             order_df['tp_volume'] = order_df['open_volume'] + abs(order_df['u_pnl'].shift(-1) * crv)
             order_df['tp_maker_fees'] = order_df['tp_volume'] * self.ea.maker_fees
-            order_df['r_pnl'] = ( order_df['tp_volume'] - order_df['open_volume'] ) - ( order_df['maker_fees'] + order_df['tp_maker_fees'] )
+            order_df['r_pnl'] = ( order_df['tp_volume'] - order_df['open_volume'] ) - ( order_df['maker_fees'] + order_df['tp_maker_fees'] ) 
 
             order_df['tp_price_min_roe'] = order_df['entry_price'] * (1 + min_roe/leverage + self.ea.maker_fees)
-            order_df['tp_price_min_trigger'] = order_df['tp_price_min_roe'] + ( order_df['tp_price_min_roe'] - order_df['entry_price'] )
+            order_df['tp_price_min_trigger'] = order_df['tp_price_min_roe'] + ( order_df['tp_price_min_roe'] - order_df['entry_price'] ) * min_roe_trigger_distance
+            order_df['tp_trail_value'] = order_df['tp_price_min_trigger'] - order_df['tp_price_min_roe'] 
 
         elif self.direction == 'short':
             order_df['u_pnl'] = order_df['open_volume'] - order_df['close_volume'] - order_df['maker_fees']
             # crv based calc
             order_df['tp_volume'] = order_df['open_volume'] - abs(order_df['u_pnl'].shift(-1) * crv)
             order_df['tp_maker_fees'] = order_df['tp_volume'] * self.ea.maker_fees
-            order_df['r_pnl'] = ( order_df['open_volume'] - order_df['tp_volume'] ) - ( order_df['maker_fees'] + order_df['tp_maker_fees'] ) * min_roe_trigger_distance
+            order_df['r_pnl'] = ( order_df['open_volume'] - order_df['tp_volume'] ) - ( order_df['maker_fees'] + order_df['tp_maker_fees'] )
 
             order_df['tp_price_min_roe'] = order_df['entry_price'] * (1 - min_roe/leverage - self.ea.maker_fees)
             order_df['tp_price_min_trigger'] = order_df['tp_price_min_roe'] - ( order_df['entry_price'] - order_df['tp_price_min_roe'] ) * min_roe_trigger_distance
+            order_df['tp_trail_value'] = order_df['tp_price_min_roe'] - order_df['tp_price_min_trigger']
         else:
             raise ValueError(f'({self.class_name()}.build_dca_order_model) Invalid trade direction {self.direction}, must be either long or short')
         
@@ -310,7 +312,20 @@ class DCAOrderModel(OrderModel):
         limit_tp = float(self.ea.price_to_precision(self.symbol, limit_tp))
 
         return limit_tp, size_tp
-
+    
+    def get_trsl_price_value(self, input_size: float, input_price: float = None) -> tuple[float, float]:
+        size_tp = input_size
+        trigger_price = self.model_df['tp_price_min_trigger'].loc[ ( ( self.model_df['pos_size'] >= size_tp ) & ( self.model_df['type'] == 'limit' ) ) ].values[0]
+        
+        if 'tp_trail_value' in self.model_df.columns:
+            trail_value = self.model_df['tp_trail_value'].loc[ ( ( self.model_df['pos_size'] >= size_tp ) & ( self.model_df['type'] == 'limit' ) ) ].values[0] 
+        else:
+            min_roe = self.model_df['tp_price_min_roe'].loc[ ( ( self.model_df['pos_size'] >= size_tp ) & ( self.model_df['type'] == 'limit' ) ) ].values[0]
+            trail_value = abs(trigger_price - min_roe)
+            
+        trail_value = float(self.ea.price_to_precision(self.symbol, trail_value))
+        return trigger_price, trail_value
+        
     # the identifier is the order id of the longest lasting order in the df - price with the highest distance
     def get_identifier(self):
         

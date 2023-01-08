@@ -36,6 +36,9 @@ class BaseBot(BaseClass):
         # last tp and order id
         self._last_tp_order_id: str = None
         self._last_sl_order_id: str = None
+        self._last_trail_sl_price: float = None
+        self._trailing_sl_triggered: bool = False
+        self._exiting: bool = False
         
         # open orders by price and id dicts
         self._open_limit_orders_by_price = { 'sell': {}, 'buy': {} }
@@ -102,6 +105,10 @@ class BaseBot(BaseClass):
     def preparation_handler(self):
 
         logging.debug(f'({self.class_name()}.preparation_handler) symbol {self.symbol}: Prepare to run the main loop')
+        
+    def restore_handler(self):
+        
+        logging.debug(f'({self.class_name()}.restore_handler) symbol {self.symbol}: Restoring state after restart of the bot')
 
     def housekeeping_handler(self):
         log_prefix = f"({self.class_name()}.housekeeping) symbol {self.symbol}:"
@@ -146,7 +153,8 @@ class BaseBot(BaseClass):
         
     def exit_position_handler(self):
         
-         logging.debug(f'({self.class_name()}.exitposition_handler) symbol {self.symbol}: Exit position handler, current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
+        logging.debug(f'({self.class_name()}.exitposition_handler) symbol {self.symbol}: Exit position handler, current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
+
 
     def finishtrade_handler(self):
         log_prefix = f"({self.class_name()}.finishtrade_handler) symbol {self.symbol}:"
@@ -260,6 +268,59 @@ class BaseBot(BaseClass):
 
         return False
 
+    def maintain_trail_sl(self, trigger_price: float, trail_value: float):
+        log_prefix = f"({self.class_name()}.maintain_sl_order) symbol {self.symbol}:"
+        
+        if self._open_position_bool == True:
+            
+            [ask, bid] = self._ea.ask_bid(self.symbol)
+            
+            prev_price = self._last_trail_sl_price
+            
+            if self._current_long == True:
+                
+                if bid >= trigger_price:
+                    self._trailing_sl_triggered = True
+                    
+                if self._last_trail_sl_price:
+                    
+                    if ask <= self._last_trail_sl_price and self._trailing_sl_triggered:
+                        self._exiting = True
+                        logging.info(f'{log_prefix} Ask {ask} below {self._last_trail_sl_price} - Exiting trailing stop')
+                        self.maintain_tp_order(ask)
+                        
+                    self._last_trail_sl_price = max(bid - trail_value, self._last_trail_sl_price)
+                else:
+                    self._last_trail_sl_price = bid - trail_value
+                    
+            else:
+                
+                if ask <= trigger_price:
+                    self._trailing_sl_triggered = True
+                
+                if self._last_trail_sl_price:
+                                        
+                    if bid >= self._last_trail_sl_price and self._trailing_sl_triggered:
+                        self._exiting = True
+                        logging.info(f'{log_prefix} Bid {bid} above {self._last_trail_sl_price} - Exiting trailing stop')
+                        self.maintain_tp_order(bid)
+                    
+                    self._last_trail_sl_price = max(ask + trail_value, self._last_trail_sl_price)
+                else:
+                    self._last_trail_sl_price = ask + trail_value
+        
+            # rounding to exchange
+            self._last_trail_sl_price = float(self._ea.price_to_precision(self.symbol, self._last_trail_sl_price))
+
+            if prev_price != self._last_trail_sl_price:
+                logging.info(f'{log_prefix} Trailing SL triggered {self._trailing_sl_triggered} New trail_sl_price {self._last_trail_sl_price}')
+                    
+        else:
+            
+            self._last_trail_sl_price = None
+            self._trailing_sl_triggered = False
+
+
     def maintain_sl_order(self, stopprice, size=None):
         log_prefix = f"({self.class_name()}.maintain_sl_order) symbol {self.symbol}:"
 
@@ -325,6 +386,9 @@ class BaseBot(BaseClass):
         if self._open_position_bool == False:
             logging.warning(f'{log_prefix} I am NOT in a position anymore ... exiting the function')
             return
+
+        if self._exiting:
+            logging.info(f'{log_prefix} Exiting - trailing stop loss to take profit of size {self._current_size} at {price}')
 
         if self._open_position_bool == True:
 
@@ -474,6 +538,8 @@ class BaseBot(BaseClass):
                 self.refresh_open_position()
 
                 if self._open_position_bool == False:
+                    
+                    self._exiting = False
 
                     # triggering orders to enter positions after timeout
                     if (timestamp < next_refresh):
@@ -494,6 +560,8 @@ class BaseBot(BaseClass):
 
                             # resetting all main state variables
                             self._last_open_position_bool = False
+                            self._trailing_sl_triggered = False
+                            self._last_trail_sl_price = None
                             self._last_current_long = None
                             self._last_position_size = None
 
@@ -511,12 +579,16 @@ class BaseBot(BaseClass):
                 else:
                     
                     next_refresh = 0
+                    
+                    # restore previous status after restart
+                    self.restore_handler()
 
                     # exit_handler to process exit signals ...
                     self.exit_position_handler()
 
                     # in position handler ...
-                    self.inposition_handler()
+                    if not self._exiting:
+                        self.inposition_handler()
                     
                     # update state vars
                     # I dont want to touch them in child classes
