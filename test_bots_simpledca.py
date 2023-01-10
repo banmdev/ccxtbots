@@ -55,7 +55,8 @@ if __name__ == '__main__':
     # model_long = FixedTPSLModel(adapter, symbol=symbol, direction='long', tp_perc=0.01, sl_perc=0.0066)
     # model_short = FixedTPSLModel(adapter, symbol=symbol, direction='short', tp_perc=0.01, sl_perc=0.0066)
     model_long  = DCAOrderModel(adapter, symbol=symbol, direction='long',  num_trades=3, price_dev=0.025, save_scale=2.0)
-    model_short = DCAOrderModel(adapter, symbol=symbol, direction='short', num_trades=4, price_dev=0.012, save_scale=2.0)
+    model_short = DCAOrderModel(adapter, symbol=symbol, direction='short', num_trades=3, price_dev=0.025, save_scale=2.0)
+    # sol num_trades = 3, price_dev 0.025
   
     signal_generator = ExtMMSignalGenerator(ask_spread=0.0005, bid_spread=0.0005, sl_buffer=0.001)
     # signal_generator = SMA_15m_1d_SignalGenerator(sma20_15_delta = -0.001)

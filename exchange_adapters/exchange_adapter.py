@@ -17,7 +17,7 @@ class ExchangeAdapter(BaseClass):
 
         self._openpos_size_field = 'contracts'
         self._trade_params = { 'timeInForce': 'PostOnly' }
-        self._trade_params_kill = self._trade_params
+        self._trade_params_kill = { 'timeInForce': 'PostOnly', 'reduceOnly': True }
 
         self._markets = self._exchange.load_markets()
 

@@ -9,7 +9,7 @@ class BaseBot(BaseClass):
 
     def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, 
                  signal_generator: ExtendedSignalGenerator, 
-                 ticks: int = 1, refresh_timeout: int = 120):
+                 ticks: int = 3, refresh_timeout: int = 120):
 
         # ticks and refresh timeout in seconds
         self._ticks: int = ticks
@@ -309,7 +309,7 @@ class BaseBot(BaseClass):
                         logging.info(f'{log_prefix} Bid {bid} above {self._last_trail_sl_price} - Exiting trailing stop')
                         self.maintain_tp_order(bid)
                     
-                    self._last_trail_sl_price = max(ask + trail_value, self._last_trail_sl_price)
+                    self._last_trail_sl_price = min(ask + trail_value, self._last_trail_sl_price)
                 else:
                     self._last_trail_sl_price = ask + trail_value
         

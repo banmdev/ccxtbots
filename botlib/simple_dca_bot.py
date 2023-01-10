@@ -12,7 +12,7 @@ from signal_generators import ExtendedSignalGenerator
 class SimpleDCABot(BaseBot):
 
     def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, signal_generator: ExtendedSignalGenerator, 
-                 long_model: DCAOrderModel, short_model: DCAOrderModel, ticks: int = 1, refresh_timeout: int = 120,
+                 long_model: DCAOrderModel, short_model: DCAOrderModel, ticks: int = 3, refresh_timeout: int = 120,
                  not_trading: bool = False) -> None:
 
         self._dca_model_long  = long_model
@@ -73,12 +73,14 @@ class SimpleDCABot(BaseBot):
 
         logging.info(f'{log_prefix} Cancel current DCA Orders ... ')
         try:
-            # cancel all orders first - only existing from the bot ...
-            if self._dca_model_long.model_df is not None:
-                self.cancel_orders_based_on_model(self._dca_model_long.model_df)
+            
+            if self._not_trading == False:
+                # cancel all orders first - only existing from the bot ...
+                if self._dca_model_long.model_df is not None:
+                    self.cancel_orders_based_on_model(self._dca_model_long.model_df)
 
-            if self._dca_model_short.model_df is not None:
-                self.cancel_orders_based_on_model(self._dca_model_short.model_df)
+                if self._dca_model_short.model_df is not None:
+                    self.cancel_orders_based_on_model(self._dca_model_short.model_df)
                         
         except Exception as e:
             logging.exception(f'{log_prefix} WARN: Could not cancel existing DCA orders')

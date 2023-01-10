@@ -13,7 +13,7 @@ class SimpleTPSLBot(BaseBot):
     def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, 
                  signal_generator: ExtendedSignalGenerator, long_model: FixedTPSLModel, 
                  short_model: FixedTPSLModel,
-                 ticks: int = 1, refresh_timeout: int = 120, not_trading=False) -> None:
+                 ticks: int = 3, refresh_timeout: int = 120, not_trading=False) -> None:
         
         if long_model.direction != 'long':
             raise ValueError(f"""({self.class_name()}.__init__) Invalid trade direction for long model: {long_model.direction}, must be long""")

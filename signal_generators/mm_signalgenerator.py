@@ -54,7 +54,7 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
 
         self.feeds = { 
                 'default': {
-                    'timeframe': '15m',
+                    'timeframe': '5m',
                     'num_bars': 50, 
                     'only_closed': True,
                     'df': None
@@ -97,6 +97,9 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
         recent_swing_high = df['HIGH_48'].iloc[-1]
         recent_swing_low = df['LOW_48'].iloc[-1]
         
+        sl_buy_price = recent_swing_low * (1 - self.sl_buffer)
+        sl_sell_price = recent_swing_high * (1 + self.sl_buffer)
+        
         # bid_limit = bid * (1 - self.bid_spread)
         # ask_limit = ask * (1 + self.ask_spread)
         
@@ -113,16 +116,16 @@ class ExtMMSignalGenerator(ExtendedSignalGenerator):
             print(f'recent_natr = {recent_natr}')
             print(f'recent_swing_high = {recent_swing_high}')
             print(f'recent_swing_low  = {recent_swing_low}')
+            print(f'sl_buy_price  = {sl_buy_price}')
+            print(f'sl_sell_price = {sl_sell_price}')
 
         # directional trading
         if mid < recent_ema and recent_rsi > 30:
             ask_limit = ask * (1 + self.ask_spread)
-            sl_sell_price = recent_swing_high * (1 + self.sl_buffer)
             signal['sell'] = { 'li': ask_limit, 'sl': sl_sell_price }
             trend = 'sell'
         if mid > recent_ema and recent_rsi < 70:
             bid_limit = bid * (1 - self.bid_spread)
-            sl_buy_price = recent_swing_low * (1 - self.sl_buffer)
             signal['buy'] = { 'li': bid_limit, 'sl': sl_buy_price }
             trend = 'buy'
            
