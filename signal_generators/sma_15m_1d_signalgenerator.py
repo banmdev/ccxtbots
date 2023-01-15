@@ -22,12 +22,14 @@ class SMA_15m_1d_SignalGenerator(ExtendedSignalGenerator):
                     'timeframe': '15m',
                     'num_bars': 50, 
                     'only_closed': True,
+                    'refresh_timeout': 180,
                     'df': None
                     },
                 'daily': {
                     'timeframe': '1d',
                     'num_bars': 50, 
                     'only_closed': True,
+                    'refresh_timeout': 300,
                     'df': None
                     },
                 }
@@ -42,47 +44,56 @@ class SMA_15m_1d_SignalGenerator(ExtendedSignalGenerator):
     def df_daily(self, value: pd.DataFrame):
         self.feeds['daily']['df'] = value
         
-    def signal(self, ask: float, bid: float):
+        
+    def prepare_df(self):
+        
+        if self.df is not None:
+            # 15m SMA 20 Periods
+            self.df['sma20_15m'] = self.df.close.rolling(20).mean()
+            # maybe later?
+            # df['HIGH_48'] = df.high.rolling(48).max()
+            # df['LOW_48'] = df.low.rolling(48).min()
+            self.df.dropna(inplace=True)
+            # logging.warn(f'({self.class_name()}.prepare_df) No default dataframe available - exit function')
+            # return
+        
+        if self.df_daily is not None:
+            # Daily SMA 20 Days
+            self.df_daily['sma20_d'] = self.df_daily.close.rolling(20).mean()
+            self.df_daily.dropna(inplace=True)
+            # logging.warn(f'({self.class_name()}.prepare_df) No daily dataframe available - exit function')
+            # return
+   
+    # no specific exit signal
+    def exit_signal(self, ask: float = None, bid: float = None) -> dict:
+        
+        return {}
+        
+    def signal(self, ask: float, bid: float) -> dict:
         
         signal = {}
         
         if self.df is None:
             logging.warn(f'({self.class_name()}.signal) No default dataframe available - exit function')
             return signal
-        else:
-            df = self.df
             
         if self.df_daily is None:
             logging.warn(f'({self.class_name()}.signal) No daily dataframe available - exit function')
             return signal
-        else:
-            df_d = self.df_daily
         
         mid = float((ask + bid)/2)
         mid = round(mid,5)
-        
-        # Daily SMA 20 Days
-        df_d['sma20_d'] = df_d.close.rolling(20).mean()
-        df_d.dropna(inplace=True)
-        
-        # 15m SMA 20 Periods
-        df['sma20_15m'] = df.close.rolling(20).mean()
-        
-        # maybe later?
-        # df['HIGH_48'] = df.high.rolling(48).max()
-        # df['LOW_48'] = df.low.rolling(48).min()
-        df.dropna(inplace=True)
-        
-        last_sma20_d = df_d['sma20_d'].iloc[-1]
-        last_sma20_15m = df['sma20_15m'].iloc[-1]
+                
+        last_sma20_d = self.df_daily['sma20_d'].iloc[-1]
+        last_sma20_15m = self.df['sma20_15m'].iloc[-1]
         
         if self.verbose:
             print(f"==== {self.class_name()}.signal VERBOSE ====")
             print('Daily Dataframe ====>:')
-            print(df_d)
+            print(self.df_daily)
             print(f'last_sma20_d = {last_sma20_d}')
             print('Dataframe from My Exchange ====>')
-            print(df)
+            print(self.df)
             print(f'last_sma20_15m = {last_sma20_15m}')
 
         if mid < last_sma20_d:

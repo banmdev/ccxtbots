@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from dotenv import load_dotenv
 
 from exchange_adapters import PhemexAdapter
@@ -35,7 +36,13 @@ if __name__ == '__main__':
         'secret': PHEMEX_API_SECRET
     }
     params = {"type":"swap", "code":PHEMEX_MARGINCOIN}
-    symbol = 'SOL/USD:USD'
+    
+    try:
+        symbol = sys.argv[1]
+    except IndexError:
+        raise SystemExit(f"Usage: {sys.argv[0]} <symbol_to_trade>")
+
+    # symbol = 'SOL/USD:USD'
     
     # connect_params = {
     #     'enableRateLimit': True,

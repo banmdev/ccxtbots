@@ -4,10 +4,14 @@ from exchange_adapters import ExchangeAdapter
 class FixedTPSLModel(OrderModel):
     
     def __init__(self, exchange_adapter: ExchangeAdapter, symbol: str, 
-                 direction: str, tp_perc: float, sl_perc: float):
+                 direction: str, tp_perc: float, sl_perc: float, 
+                 tp_trigger_perc: float, tp_trail_perc: float):
         
         self._tp_perc: float = tp_perc
         self._sl_perc: float = sl_perc
+        
+        self._tp_trigger_perc: float = tp_trigger_perc
+        self._tp_trail_perc: float = tp_trail_perc
         
         self._sl_fixed: float = None
         self._tp_fixed: float = None
@@ -49,6 +53,17 @@ class FixedTPSLModel(OrderModel):
     @sl_perc.setter
     def tp_perc(self, value: float):
         self._tp_perc = value
+    
+    
+    def get_trsl_price_value(self, input_size: float = None, input_price: float = None) -> tuple[float, float]:
+        
+        trigger_price = input_price * (1 + self._tp_trigger_perc) if self.direction == 'long' else input_price * (1 - self._tp_trigger_perc)
+        trigger_price = float(self.ea.price_to_precision(self.symbol, trigger_price))
+        
+        trail_value = trigger_price * self._tp_trail_perc
+        trail_value = float(self.ea.price_to_precision(self.symbol, trail_value))
+        
+        return trigger_price, trail_value
         
                      
     def get_sl_price_size(self, input_size: float = None, input_price: float = None) -> tuple[float, float]:

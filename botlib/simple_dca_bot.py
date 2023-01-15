@@ -147,20 +147,36 @@ class SimpleDCABot(BaseBot):
     def exit_position_handler(self):
         log_prefix = f"({self.class_name()}.exit_position_handler) symbol {self.symbol}:"
         
+        exit_signal = False
+        
+        # PROCESSING EXIT SIGNALS ...
+        [ask, bid] = self._ea.ask_bid(self.symbol)
+        signal = self.exit_signal(ask, bid)
+        
         if self._current_long == True:
             long_short = "long"
-            model = self._dca_model_long            
+            model = self._dca_model_long
+            logging.debug(f'{log_prefix} {long_short} Exit signal? {signal}')
+            if 'sell' in signal and not 'buy' in signal:
+                self.maintain_tp_order(ask)
+                exit_signal = True
+                self._exiting = True
+                
         else:
             long_short = "short"
             model = self._dca_model_short
+            logging.debug(f'{log_prefix} {long_short} Exit signal? {signal}')
+            if 'buy' in signal and not 'sell' in signal:
+                self.maintain_tp_order(bid)
+                exit_signal = True
+                self._exiting = True
+        
+        if not exit_signal:
+            # MAINTAIN TRAILING SL TO TAKE MININUM PROFIT
+            [trig_price, tr_value] = model.get_trsl_price_value(self._current_size)
+            logging.debug(f'{log_prefix} {long_short} Trailing stop loss will be triggered at {trig_price} with trail value of {tr_value}')
             
-        # PROCESSING EXIT SIGNALS ...
-        
-        # MAINTAIN TRAILING SL TO TAKE MININUM PROFIT
-        [trig_price, tr_value] = model.get_trsl_price_value(self._current_size)
-        logging.debug(f'{log_prefix} {long_short} Trailing stop loss will be triggered at {trig_price} with trail value of {tr_value}')
-        
-        self.maintain_trail_sl(trigger_price=trig_price, trail_value=tr_value)
+            self.maintain_trail_sl(trigger_price=trig_price, trail_value=tr_value)
         
         if self._exiting:
             logging.info(f'{log_prefix} Exiting the {long_short} position at {self._entryPrice} with size {self._current_size}')
@@ -285,10 +301,10 @@ class SimpleDCABot(BaseBot):
         try:
             # check balance
             total_balance = self._ea.get_total_balance()
+            
         except Exception as e:
 
-            logging.exception(f'{log_prefix} ERROR: Could not check current balance')
-            raise Exception(e)
+            logging.warning(f'{log_prefix} ERROR: Could not check current balance ... retry next time')
 
         else:
             max_risk_per_trade = ( total_balance * self.max_account_risk_per_trade ) 
@@ -296,12 +312,12 @@ class SimpleDCABot(BaseBot):
 
             try:
                 
-                # get bid, ask and mid
+                # get bid, ask
                 [ask, bid] = self._ea.ask_bid(self.symbol)
                 signal = self.signal(ask, bid)
 
             except Exception as e:
-                logging.exception(f'{log_prefix} WARN: Could not get bid ask price or signal')
+                logging.warning(f'{log_prefix} WARN: Could not get bid ask price or signal')
                 return                
                 
             # creating the ask bid orders considering the trend (from strategy)
@@ -323,7 +339,7 @@ class SimpleDCABot(BaseBot):
                     try:
                         self.create_orders_based_on_model(self._dca_model_short.model_df)
                     except:
-                        logging.exception(f'{log_prefix} WARN: Could not create sell orders')
+                        logging.warning(f'{log_prefix} WARN: Could not create sell orders')
                     else:
                         print(f'{log_prefix} DCA Model Order Dataframe for asks (executed):')
                         print(self._dca_model_short.model_df)
@@ -347,7 +363,7 @@ class SimpleDCABot(BaseBot):
                     try:
                         self.create_orders_based_on_model(self._dca_model_long.model_df)
                     except:
-                        logging.exception(f'{log_prefix} WARN: Could not create buy orders')
+                        logging.warning(f'{log_prefix} WARN: Could not create buy orders')
                     else:
                         print(f'{log_prefix} DCA Model Order Dataframe for bids (executed):')
                         print(self._dca_model_long.model_df)

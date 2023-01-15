@@ -99,38 +99,43 @@ class ExchangeAdapter(BaseClass):
         openpos_bool = False
         long = True
 
-        positions = self._exchange.fetch_positions(symbols=[symbol], params=self._exchange_params)
-
-        # find the open position ... bitget with hedign mode returns always two records, one for long and one for short
-        for pos in positions:
-            entry_price = float(pos['entryPrice'] or 0)
-            if entry_price > 0:
-                position = pos
-                break
-
-        # no position found
-        if position is None:
-            return None, openpos_bool, openpos_size, long, entry_price, leverage
-
-        openpos_size = float(position[self._openpos_size_field] or 0)
-        openpos_side = position['side']
-    
-        # some exchanges such as phemex returns negative levarage, convert to positve
-        leverage = abs(float(position['leverage'] or 0))
-
-        if openpos_size > 0:
-            openpos_bool = True
-            if openpos_side == 'long':
-                long = True
-            elif openpos_side == 'short':
-                long = False
+        try:
+            positions = self._exchange.fetch_positions(symbols=[symbol], params=self._exchange_params)
+        except Exception as err:
+            # logging.exception(f"{log_prefix} Unexpected {err=}, {type(err)=}")
+            raise      
         else:
-            openpos_bool = False
-            long = None
 
-        logging.debug(f'{log_prefix} openpos_bool: {openpos_bool}, openpos_size: {openpos_size}, long: {long}, entry_price: {entry_price}, leverage: {leverage}')
+            # find the open position ... bitget with heding mode returns always two records, one for long and one for short
+            for pos in positions:
+                entry_price = float(pos['entryPrice'] or 0)
+                if entry_price > 0:
+                    position = pos
+                    break
 
-        return position, openpos_bool, openpos_size, long, entry_price, leverage
+            # no position found
+            if position is None:
+                return None, openpos_bool, openpos_size, long, entry_price, leverage
+
+            openpos_size = float(position[self._openpos_size_field] or 0)
+            openpos_side = position['side']
+        
+            # some exchanges such as phemex returns negative levarage, convert to positve
+            leverage = abs(float(position['leverage'] or 0))
+
+            if openpos_size > 0:
+                openpos_bool = True
+                if openpos_side == 'long':
+                    long = True
+                elif openpos_side == 'short':
+                    long = False
+            else:
+                openpos_bool = False
+                long = None
+
+            logging.debug(f'{log_prefix} openpos_bool: {openpos_bool}, openpos_size: {openpos_size}, long: {long}, entry_price: {entry_price}, leverage: {leverage}')
+
+            return position, openpos_bool, openpos_size, long, entry_price, leverage
 
     def fetch_candles_df(self, symbol, timeframe='5m', num_bars=50, only_closed=True):
         log_prefix = f"({self.class_name()}.fetch_candles) symbol {symbol}:"

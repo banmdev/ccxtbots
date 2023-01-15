@@ -28,10 +28,13 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
                     'timeframe': '15m',
                     'num_bars': 30, 
                     'only_closed': True,
-                    'df': None
+                    'df': None,
+                    'refresh_timeout': 150
                     }
                 }
                 
+        self.df_vector: pd.DataFrame = None
+        
         # timeframe to obtain from binance ... should be consistent with
         # the actual exchange         
         self._buy_rsi: float = 30
@@ -133,39 +136,50 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
         
         return df
 
-            
+    def prepare_df(self):
+
+        self.df_vector = self.vector_candles()
         
+        # if self.df is None:
+        #    logging.warn(f'({self.class_name()}.prepare_df) No default dataframe available - exit function')
+        if self.df is not None:
+            pass
+        
+        if self.df_vector is None:
+            logging.warn(f'({self.class_name()}.prepare_df) No df_vector dataframe available')
+
+            
     def signal(self, ask: float = None, bid: float = None):
         
         signal = {}
         
-        df_vector = self.vector_candles()
-        
         if self.df is None:
             logging.warn(f'({self.class_name()}.signal) No default dataframe available - exit function')
             return signal
-        else:
-            df = self.df
+        
+        if self.df_vector is None:
+            logging.warn(f'({self.class_name()}.signal) No df_vector dataframe available - exit function')
+            return signal
         
         # the vector df from binance
-        last_vector_signal = df_vector['signal'].iloc[-1]
-        last_vector_datetime = df_vector['datetime'].iloc[-1]
+        last_vector_signal = self.df_vector['signal'].iloc[-1]
+        last_vector_datetime = self.df_vector['datetime'].iloc[-1]
         
         # my dataframe from the exchange to obtain open, high, low, close and tp values ...
-        last_df_datetime = df['datetime'].loc[ last_vector_datetime ] #.values[0]
-        last_open = df['open'].loc[ last_vector_datetime ]
-        last_close = df['close'].loc[ last_vector_datetime ]
+        last_df_datetime = self.df['datetime'].loc[ last_vector_datetime ] #.values[0]
+        last_open = self.df['open'].loc[ last_vector_datetime ]
+        last_close = self.df['close'].loc[ last_vector_datetime ]
         
         logging.info(f'({self.class_name()}.signal) Last Binance data frame: {last_vector_datetime} Last data frame: {last_df_datetime}')
         
         if self.verbose:
             print(f"==== {self.class_name()}.signal VERBOSE ====")
             print('Vector Candle Dataframe ====>:')
-            print(df_vector)
+            print(self.df_vector)
             print(f'last_vector_signal = {last_vector_signal}')
             print(f'last_vector_datetime = {last_vector_datetime}')
             print('Dataframe from My Exchange ====>')
-            print(df)
+            print(self.df)
             print(f'last_df_datetime = {last_df_datetime}')
             print(f'last_open  = {last_open}')
             print(f'last_close = {last_close}')
@@ -191,3 +205,7 @@ class VectorCandleSignalGenerator(ExtendedSignalGenerator):
             logging.info(f'({self.class_name()}.signal) Ignoring last data frame: {last_df_datetime} open {last_open} close {last_close}')
           
         return signal
+    
+    def exit_signal(self, ask: float = None, bid: float = None) -> dict:
+        
+        return {}

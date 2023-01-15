@@ -35,6 +35,7 @@ class ExtendedSignalGenerator(SignalGenerator):
                           'timeframe': '5m',
                           'num_bars': 50, 
                           'only_closed': True,
+                          'refresh_timeout': 150,
                           'df': None 
                         } 
                       }
@@ -58,6 +59,14 @@ class ExtendedSignalGenerator(SignalGenerator):
         self.feeds['default']['num_bars'] = value
         
     @property
+    def refresh_timeout(self) -> int:
+        return self.feeds['default']['refresh_timeout']
+
+    @num_bars.setter
+    def refresh_timeout(self, value: int):
+        self.feeds['default']['refresh_timeout'] = value
+        
+    @property
     def only_closed(self) -> bool:
         return self.feeds['default']['only_closed']
 
@@ -72,6 +81,14 @@ class ExtendedSignalGenerator(SignalGenerator):
     @df.setter
     def df(self, value: pd.DataFrame):
         self.feeds['default']['df'] = value
+        
+    def prepare_df(self):
+        # function to prepare the dataframes after loading
+        pass
+        
+    def exit_signal(self, ask: float = None, bid: float = None) -> dict:
+        
+        return { }
         
     def signal(self, ask: float = None, bid: float = None) -> dict:
     

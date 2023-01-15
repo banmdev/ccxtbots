@@ -28,13 +28,16 @@ class HeikinAshiSignalGenerator(ExtendedSignalGenerator):
                     'timeframe': '5m',
                     'num_bars': 300, 
                     'only_closed': True,
-                    'df': None
+                    'df': None,
+                    'refresh_timeout': 90
                     }
                 }
         
         self._ema_fast_slow_delta: float = 0.03 / 100
         self._volume_treshold: float = 5.0
         self._ema_fast_close_delta: float = 0.06 / 100
+        
+        self.df_ha: pd.DataFrame = None
         
         self._sl_buffer = sl_buffer
         
@@ -101,42 +104,51 @@ class HeikinAshiSignalGenerator(ExtendedSignalGenerator):
 
         return df
 
+    def prepare_df(self):
+
+        self.df_ha = self.heikinashi_signal()
+        
+        if self.df is not None:
+            # logging.warn(f'({self.class_name()}.prepare_df) No default dataframe available - exit function')
+            # my dataframe from the exchange to obtain open, high, low, close and tp values ...
+            self.df['HIGH_48'] = self.df.high.rolling(48).max()
+            self.df['LOW_48'] = self.df.low.rolling(48).min()
+            self.df.dropna(inplace=True)
+            
+        if self.df_ha is None:
+            logging.warn(f'({self.class_name()}.prepare_df) No df_ha dataframe available')
+   
    
     def signal(self, ask: float = None, bid: float = None):
         
         signal = {}
         
-        df_ha = self.heikinashi_signal()
-        
         if self.df is None:
             logging.warn(f'({self.class_name()}.signal) No default dataframe available - exit function')
             return signal
-        else:
-            df = self.df
+        
+        if self.df_ha is None:
+            logging.warn(f'({self.class_name()}.signal) No default df_ha dataframe available - exit function')
+            return signal
         
         # the vector df from binance
-        last_ha_signal = df_ha['signal'].iloc[-1]
-        last_ha_datetime = df_ha['datetime'].iloc[-1]
-        
-        # my dataframe from the exchange to obtain open, high, low, close and tp values ...
-        df['HIGH_48'] = df.high.rolling(48).max()
-        df['LOW_48'] = df.low.rolling(48).min()
-        df.dropna(inplace=True)
-        
+        last_ha_signal = self.df_ha['signal'].iloc[-1]
+        last_ha_datetime = self.df_ha['datetime'].iloc[-1]
+                
         # for stop loss
-        recent_swing_high = df['HIGH_48'].iloc[-1]
-        recent_swing_low = df['LOW_48'].iloc[-1]
+        recent_swing_high = self.df['HIGH_48'].iloc[-1]
+        recent_swing_low = self.df['LOW_48'].iloc[-1]
                
         logging.info(f'({self.class_name()}.signal) Last Binance data frame: {last_ha_datetime} Last data frame: {last_ha_datetime}')
         
         if self.verbose:
             print(f"==== {self.class_name()}.signal VERBOSE ====")
             print('HeikinAshi Dataframe ====>:')
-            print(df_ha)
+            print(self.df_ha)
             print(f'last_ha_signal = {last_ha_signal}')
             print(f'last_ha_datetime = {last_ha_datetime}')
             print('Dataframe from My Exchange ====>')
-            print(df)
+            print(self.df)
             print(f'recent_swing_high = {recent_swing_high}')
             print(f'recent_swing_low  = {recent_swing_low}')
         
@@ -156,3 +168,7 @@ class HeikinAshiSignalGenerator(ExtendedSignalGenerator):
             logging.info(f'({self.class_name()}.signal) No Heikin Ashi signal detected at binance at: {last_ha_datetime}')
          
         return signal
+    
+    def exit_signal(self, ask: float = None, bid: float = None) -> dict:
+        
+        return {}

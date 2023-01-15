@@ -211,6 +211,43 @@ class SimpleTPSLBot(BaseBot):
                                     
                 except Exception as e:
                     logging.exception(f'{log_prefix} WARN: Could not execute the sell order')
+
+    def exit_position_handler(self):
+        
+        log_prefix = f"({self.class_name()}.exit_position_handler) symbol {self.symbol}:"
+        
+        exit_signal = False
+        
+        # PROCESSING EXIT SIGNALS ...
+        [ask, bid] = self._ea.ask_bid(self.symbol)
+        signal = self.exit_signal(ask, bid)
+        
+        if self._current_long == True:
+            long_short = "long"
+            model = self._long_model
+            logging.debug(f'{log_prefix} Long Exit signal? {signal}')
+            if 'sell' in signal and not 'buy' in signal:
+                self.maintain_tp_order(ask)
+                exit_signal = True
+                self._exiting = True          
+        else:
+            long_short = "short"
+            model = self._short_model
+            logging.debug(f'{log_prefix} Short Exit signal? {signal}')
+            if 'buy' in signal and not 'sell' in signal:
+                self.maintain_tp_order(bid)
+                exit_signal = True
+                self._exiting = True
                 
+        if not exit_signal:
+            # MAINTAIN TRAILING SL TO TAKE MININUM PROFIT
+            [trig_price, tr_value] = model.get_trsl_price_value(self._current_size, self._entryPrice)
+            logging.debug(f'{log_prefix} {long_short} Trailing stop loss will be triggered at {trig_price} with trail value of {tr_value}')
+            
+            self.maintain_trail_sl(trigger_price=trig_price, trail_value=tr_value)
+        
+        if self._exiting:
+            logging.info(f'{log_prefix} Exiting the {long_short} position at {self._entryPrice} with size {self._current_size}')
+            
 
     

@@ -162,8 +162,20 @@ class BaseBot(BaseClass):
         logging.info(f'{log_prefix}: Finish trade handler, current_size: {self._current_size}, long: {self._current_long}, entryPrice: {self._entryPrice}, leverage {self._position_leverage}')
 
     def refresh_open_position(self):
+        log_prefix = f"({self.class_name()}.refresh_open_position) symbol {self.symbol}:"
         
-        [ self._position, self._open_position_bool, self._current_size, self._current_long, self._entryPrice, self._position_leverage ] = self._ea.fetch_open_positions(self.symbol)
+        try:
+            
+            [ self._position, 
+             self._open_position_bool, 
+             self._current_size, 
+             self._current_long, 
+             self._entryPrice, 
+             self._position_leverage ] = self._ea.fetch_open_positions(self.symbol)
+            
+        except:
+            logging.warning(f'{log_prefix} WARN: Could not fetch open positions ... try next time')
+            
     
     def shutdown_handler(self):
         log_prefix = f"({self.class_name()}.shutdown_handler) symbol {self.symbol}:"
@@ -185,23 +197,40 @@ class BaseBot(BaseClass):
         
         log_prefix = f"({self.class_name()}.load_data_feeds) symbol {self.symbol}:"
         
+        timestamp = int(time.time()*1000)
+        
         for feed in self._sg.feeds:
             tf = self._sg.feeds[feed]['timeframe']
             nb = self._sg.feeds[feed]['num_bars']
             oc = self._sg.feeds[feed]['only_closed']
-            logging.info(f"{log_prefix} Obtaining datafeed {feed} timeframe: {tf} num_bars: {nb} only_closed: {oc}")
-            try:
-                self._sg.feeds[feed]['df'] = self._ea.fetch_candles_df(self.symbol, 
-                                                                            timeframe=tf, 
-                                                                            num_bars=nb, 
-                                                                            only_closed=oc)
-            except Exception as e:
-                logging.exception(f'{log_prefix} WARN: Could not load candles for {feed}')
-                self._sg.feeds[feed]['df'] = None
+            re = int(self._sg.feeds[feed]['refresh_timeout'] * 1000)
+            if 'next_refresh' not in self._sg.feeds[feed] or timestamp >= self._sg.feeds[feed]['next_refresh']:
+                logging.info(f"{log_prefix} Obtaining datafeed {feed} timeframe: {tf} num_bars: {nb} only_closed: {oc}")
+                try:
+                    self._sg.feeds[feed]['df'] = self._ea.fetch_candles_df(self.symbol, 
+                                                                                timeframe=tf, 
+                                                                                num_bars=nb, 
+                                                                                only_closed=oc)
+                    
+                except Exception as e:
+                    logging.exception(f'{log_prefix} WARN: Could not load candles for {feed}')
+                    self._sg.feeds[feed]['df'] = None
+                else:
+                    self._sg.feeds[feed]['next_refresh'] = timestamp + re
+                    self._sg.prepare_df()
+                    logging.info(f"{log_prefix} Success datafeed {feed} obtained. Next refresh {self._sg.feeds[feed]['next_refresh']}")
+
+        
+
     
     # wrapping the signal generator
     def signal(self, ask: float, bid: float):
+        
         return self._sg.signal(ask, bid)
+    
+    def exit_signal(self, ask: float, bid: float):
+        
+        return self._sg.exit_signal(ask, bid)
     
     # Parse a signal dict returned from an Extended Signal Generator
     def parse_signal(self, signal: dict, dir: str, default_li: float = None) -> tuple[float, float, float]:
@@ -547,6 +576,10 @@ class BaseBot(BaseClass):
             try:
 
                 logging.debug(f'({self.class_name()}.main_loop) Mainloop start')
+                
+                # load data feeds here to make sure child classes don't need to
+                # take care about it and only call the signal() function
+                self.load_data_feeds()
 
                 self.refresh_active_orders()
 
@@ -583,14 +616,12 @@ class BaseBot(BaseClass):
                         
                         # Last trade was finished by exit handler ... force wait
                         if self._exiting:
-                            logging.info(f'({self.class_name()}.main_loop) Last trade was finished by exit handler ... force wait 5min!')
-                            time.sleep(300)
+                            logging.info(f'({self.class_name()}.main_loop) Last trade was finished by exit handler ... force wait 3min!')
+                            self._exiting = False
+                            time.sleep(180)
+                            continue
                             
-                        self._exiting = False
-                        
-                        # load data feeds here to make sure child classes don't need to
-                        # take care about it and only call the signal() function
-                        self.load_data_feeds()
+                        # self._exiting = False
                         
                         # call enter_position handler to process entry signals ...
                         # and enter the position
